@@ -22,21 +22,11 @@ library(Synth)
 library(fredr)
 library(plm)
 library(openalexR)
+library(purrr)
 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
 )
-
-oa_fetch(
-
-  entity = "institutions",
-
-  search = "University of Cape Town",
-
-  per_page = 1
-
-)
-
 
 qs_2014 <- read_csv('qs_rankings_2014_complete.csv')
 qs_2015 <- read_csv('qs_rankings_2015_complete.csv')
@@ -102,16 +92,67 @@ qs_panel_citations <- qs_panel %>%
   select(year, `Citations per Faculty`, university_name) %>%
   rename(name = 'university_name')
 
+tw_panel_merge <- bind_rows(
+  tw_panel_2011 %>% mutate(across(everything(), as.character)),
+  tw_panel %>% mutate(across(everything(), as.character))
+) %>%
+  mutate(
+    year = as.integer(Year)
+  ) %>%
+  distinct(name, year, .keep_all = TRUE) %>%
+  select(-Year) %>%
+  arrange(name, year)
+
 tw_panel_merge <- tw_panel_merge %>%
-  left_join(qs_panel_citations,   by = c('name', 'year')) %>%
-  distinct(name, year, .keep_all = TRUE) 
+  left_join(
+    qs_panel_citations %>%
+      select(
+        name,
+        year,
+        `Citations per Faculty`
+      ) %>%
+      distinct(name, year, .keep_all = TRUE),
+    by = c("name", "year")
+  ) %>%
+  rename(
+    citations_per_faculty = `Citations per Faculty`
+  ) %>%
+  mutate(
+    citations_per_faculty =
+      as.numeric(citations_per_faculty)
+  )
 
 university_names <- tw_panel_merge %>%
   distinct(name) %>%
   pull(name)
 
-inst_ids <- map(university_names, \(u) {
-  inst <- tryCatch(oa_fetch(entity = "institutions", search = u, verbose = FALSE), error = function(e) NULL)
-  tibble(name = u, inst_id = if (is.null(inst) || nrow(inst) == 0) NA_character_ else inst$id[1])
-}) |>
-  list_rbind()
+fetch_inst_id_safe <- function(u) {
+  message("Fetching: ", u)
+  inst <- tryCatch(
+    oa_fetch(entity = "institutions", search = u, verbose = FALSE),
+    error = function(e) NULL
+  )
+  tibble(
+    name = u,
+    inst_id = if (is.null(inst) || nrow(inst) == 0) NA_character_ else inst$id[1]
+  )
+}
+
+inst_ids <- readRDS("inst_ids_progress.rds")
+
+# Keep only universities still missing an ID
+
+remaining_names <- inst_ids %>%
+  filter(is.na(inst_id)) %>%
+  pull(name)
+# Continue automatically from first missing ID
+
+for (u in remaining_names) {
+  message("Fetching: ", u)
+  result <- fetch_inst_id_safe(u)
+  inst_ids <- inst_ids %>%
+  filter(name != u) %>%
+  bind_rows(result)
+  saveRDS(inst_ids, "inst_ids_progress.rds")
+}
+
