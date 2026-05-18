@@ -21,6 +21,22 @@ library(TwoWayFEWeights)
 library(Synth)
 library(fredr)
 library(plm)
+library(openalexR)
+
+options(
+  openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
+)
+
+oa_fetch(
+
+  entity = "institutions",
+
+  search = "University of Cape Town",
+
+  per_page = 1
+
+)
+
 
 qs_2014 <- read_csv('qs_rankings_2014_complete.csv')
 qs_2015 <- read_csv('qs_rankings_2015_complete.csv')
@@ -60,9 +76,18 @@ qs_panel <- bind_rows(qs_list_clean) %>%
   mutate(
     year = as.integer(year)
   ) %>%
-  arrange(university_name, year)
+  arrange(university_name, year) %>%
+  mutate(
+    across(
+      where(is.character),
+      ~ case_when(
+        . %in% c("null", "NULL", "n/a", "N/A", "NA", "", " ") ~ NA_character_,
+        TRUE ~ .
+      )
+    )
+  )
 
-tw_panel <- read_csv('THE World University Rankings 2016-2026.csv') %>%
+tw_panel <- read_csv('/Users/marcel/Stage_UMISOURCE-/THE World University Rankings 2016-2026.csv') %>%
   rename(name = 'Name',
         rank = 'Rank',
         scores_overall = 'Overall Score',
@@ -73,87 +98,20 @@ tw_panel <- read_csv('THE World University Rankings 2016-2026.csv') %>%
 tw_panel_2011 <- read_csv('2011_2015_rankings.csv') %>%
   select(-rank_order, -...22, -subjects_offered, -closed, -aliases, -unaccredited, -scores_international_outlook_rank, -scores_research_rank, -scores_citations_rank, -scores_overall_rank, -scores_teaching_rank, -scores_industry_income_rank) 
 
-tw_panel_2011_africa <- tw_panel_2011 %>%
-  filter(
-    location %in% c(
-      "South Africa",
-      "Egypt",
-      "Nigeria",
-      "Kenya",
-      "Ghana",
-      "Morocco",
-      "Tunisia",
-      "Uganda",
-      "Ethiopia",
-      "Algeria",
-      "Botswana",
-      "Zambia",
-      "Zimbabwe",
-      "Senegal",
-      "Cameroon",
-      "Sudan",
-      "Rwanda",
-      "Tanzania",
-      "Mauritius",
-      'Madagascar'
-    )
-  )
+qs_panel_citations <- qs_panel %>%
+  select(year, `Citations per Faculty`, university_name) %>%
+  rename(name = 'university_name')
 
-tw_panel_merge <- bind_rows(
-  tw_panel_2011 %>% mutate(across(everything(), as.character)),
-  tw_panel %>% mutate(across(everything(), as.character))
-) %>%
-  mutate(
-    year = as.integer(Year)
-  ) %>%
-  distinct(name, year, .keep_all = TRUE) %>%
-  arrange(name, year) %>%
-  group_by(name) %>%
-  mutate(
-    first_year = min(year, na.rm = TRUE),
-    last_year  = max(year, na.rm = TRUE),
-    n_years    = n_distinct(year)
-  ) %>%
-  ungroup()
+tw_panel_merge <- tw_panel_merge %>%
+  left_join(qs_panel_citations,   by = c('name', 'year')) %>%
+  distinct(name, year, .keep_all = TRUE) 
 
-tw_panel_africa <- tw_panel_merge %>%
-  filter(
-    location %in% c(
-      "South Africa",
-      "Egypt",
-      "Nigeria",
-      "Kenya",
-      "Ghana",
-      "Morocco",
-      "Tunisia",
-      "Uganda",
-      "Ethiopia",
-      "Algeria",
-      "Botswana",
-      "Zambia",
-      "Zimbabwe",
-      "Senegal",
-      "Cameroon",
-      "Sudan",
-      "Rwanda",
-      "Tanzania",
-      "Mauritius",
-      'Madagascar'
-    )
-  ) %>% 
-  select(-Year) 
+university_names <- tw_panel_merge %>%
+  distinct(name) %>%
+  pull(name)
 
-pdata <- pdata.frame(
-  tw_panel_merge,
-  index = c("name", "year")
-)
-
-model_persistence <- plm(
-  scores_overall ~ lag(scores_overall, 1),
-  data  = pdata,
-  model = "within",
-  effect = "twoways"
-)
-
-summary(model_persistence)
-
+inst_ids <- map(university_names, \(u) {
+  inst <- tryCatch(oa_fetch(entity = "institutions", search = u, verbose = FALSE), error = function(e) NULL)
+  tibble(name = u, inst_id = if (is.null(inst) || nrow(inst) == 0) NA_character_ else inst$id[1])
+}) |>
+  list_rbind()
