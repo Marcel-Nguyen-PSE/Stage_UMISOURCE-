@@ -20,6 +20,7 @@ library(rdrobust)
 library(TwoWayFEWeights)
 library(Synth)
 library(fredr)
+library(plm)
 
 qs_2014 <- read_csv('qs_rankings_2014_complete.csv')
 qs_2015 <- read_csv('qs_rankings_2015_complete.csv')
@@ -60,4 +61,99 @@ qs_panel <- bind_rows(qs_list_clean) %>%
     year = as.integer(year)
   ) %>%
   arrange(university_name, year)
+
+tw_panel <- read_csv('THE World University Rankings 2016-2026.csv') %>%
+  rename(name = 'Name',
+        rank = 'Rank',
+        scores_overall = 'Overall Score',
+        scores_teaching = 'Teaching',
+        scores_research = 'Research Quality',
+        location = 'Country') 
+
+tw_panel_2011 <- read_csv('2011_2015_rankings.csv') %>%
+  select(-rank_order, -...22, -subjects_offered, -closed, -aliases, -unaccredited, -scores_international_outlook_rank, -scores_research_rank, -scores_citations_rank, -scores_overall_rank, -scores_teaching_rank, -scores_industry_income_rank) 
+
+tw_panel_2011_africa <- tw_panel_2011 %>%
+  filter(
+    location %in% c(
+      "South Africa",
+      "Egypt",
+      "Nigeria",
+      "Kenya",
+      "Ghana",
+      "Morocco",
+      "Tunisia",
+      "Uganda",
+      "Ethiopia",
+      "Algeria",
+      "Botswana",
+      "Zambia",
+      "Zimbabwe",
+      "Senegal",
+      "Cameroon",
+      "Sudan",
+      "Rwanda",
+      "Tanzania",
+      "Mauritius",
+      'Madagascar'
+    )
+  )
+
+tw_panel_merge <- bind_rows(
+  tw_panel_2011 %>% mutate(across(everything(), as.character)),
+  tw_panel %>% mutate(across(everything(), as.character))
+) %>%
+  mutate(
+    year = as.integer(Year)
+  ) %>%
+  distinct(name, year, .keep_all = TRUE) %>%
+  arrange(name, year) %>%
+  group_by(name) %>%
+  mutate(
+    first_year = min(year, na.rm = TRUE),
+    last_year  = max(year, na.rm = TRUE),
+    n_years    = n_distinct(year)
+  ) %>%
+  ungroup()
+
+tw_panel_africa <- tw_panel_merge %>%
+  filter(
+    location %in% c(
+      "South Africa",
+      "Egypt",
+      "Nigeria",
+      "Kenya",
+      "Ghana",
+      "Morocco",
+      "Tunisia",
+      "Uganda",
+      "Ethiopia",
+      "Algeria",
+      "Botswana",
+      "Zambia",
+      "Zimbabwe",
+      "Senegal",
+      "Cameroon",
+      "Sudan",
+      "Rwanda",
+      "Tanzania",
+      "Mauritius",
+      'Madagascar'
+    )
+  ) %>% 
+  select(-Year) 
+
+pdata <- pdata.frame(
+  tw_panel_merge,
+  index = c("name", "year")
+)
+
+model_persistence <- plm(
+  scores_overall ~ lag(scores_overall, 1),
+  data  = pdata,
+  model = "within",
+  effect = "twoways"
+)
+
+summary(model_persistence)
 
