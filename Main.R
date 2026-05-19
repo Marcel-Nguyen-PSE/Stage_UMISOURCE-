@@ -24,6 +24,8 @@ library(plm)
 library(openalexR)
 library(purrr)
 
+####################################################################################################################
+# Creation and fetching of the panel data 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
 )
@@ -828,5 +830,7 @@ tw_panel_merge <- tw_panel_merge %>%
 write_csv(tw_panel_merge, "tw_panel_merge.csv")
 write_csv(inst_ids, "inst_ids.csv")
 write_csv(pubs, "pubs.csv")
+
+################################################################################################################
 
 tw_panel <- read_csv('tw_panel_merge.csv')
