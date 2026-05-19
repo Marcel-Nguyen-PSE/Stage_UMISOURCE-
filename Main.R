@@ -781,3 +781,50 @@ tw_panel_merge <- tw_panel_merge %>%
   )) %>%
   left_join(inst_ids %>% distinct(name, .keep_all = TRUE), by = "name")
 
+
+fetch_pubs <- function(inst_id, year, retries = 3) {
+  for (i in seq_len(retries)) {
+    Sys.sleep(0.5)
+    works <- tryCatch(
+      oa_fetch(
+        entity           = "works",
+        institutions.id  = inst_id,
+        publication_year = year,
+        count_only       = TRUE,
+        verbose          = FALSE
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(works)) break
+    Sys.sleep(5 * i)
+  }
+  n <- if (is.null(works)) NA_integer_ else as.integer(works$count[1])
+  tibble(inst_id = inst_id, year = year, n_publications = n)
+}
+
+# Resume from checkpoint if exists
+pubs <- if (file.exists("pubs_progress.rds")) readRDS("pubs_progress.rds") else tibble(inst_id = character(), year = integer(), n_publications = integer())
+
+# Build the full list of (inst_id, year) pairs to fetch
+to_fetch <- tw_panel_merge %>%
+  distinct(inst_id, year) %>%
+  filter(!is.na(inst_id)) %>%
+  anti_join(pubs, by = c("inst_id", "year"))  # skip already fetched
+
+message(nrow(to_fetch), " requests remaining")
+
+for (i in seq_len(nrow(to_fetch))) {
+  result <- fetch_pubs(to_fetch$inst_id[i], to_fetch$year[i])
+  pubs   <- bind_rows(pubs, result)
+  saveRDS(pubs, "pubs_progress.rds")
+}
+
+tw_panel_merge <- tw_panel_merge %>%
+  left_join(
+    pubs,
+    by = c("inst_id", "year")
+  )
+
+write_csv(tw_panel_merge, "tw_panel_merge.csv")
+write_csv(inst_ids, "inst_ids.csv")
+write_csv(pubs, "pubs.csv")
