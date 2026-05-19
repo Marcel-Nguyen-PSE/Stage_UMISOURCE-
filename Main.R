@@ -771,3 +771,13 @@ for (u in remaining_names) {
 
 }
 
+length(remaining_names)
+
+tw_panel_merge <- tw_panel_merge %>%
+  mutate(name = ifelse(
+    name %in% manual_matches$original_name,
+    manual_matches$search_name[match(name, manual_matches$original_name)],
+    name
+  )) %>%
+  left_join(inst_ids %>% distinct(name, .keep_all = TRUE), by = "name")
+
