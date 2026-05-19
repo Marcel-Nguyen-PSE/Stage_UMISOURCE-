@@ -138,10 +138,6 @@ fetch_inst_id_safe <- function(u) {
   )
 }
 
-inst_ids <- readRDS("inst_ids_progress.rds")
-
-# Keep only universities still missing an ID
-
 remaining_names <- inst_ids %>%
   filter(is.na(inst_id)) %>%
   pull(name)
@@ -156,3 +152,103 @@ for (u in remaining_names) {
   saveRDS(inst_ids, "inst_ids_progress.rds")
 }
 
+inst_ids <- readRDS("inst_ids_progress.rds")
+
+# Keep only universities still missing an ID
+
+
+
+
+fetch_inst_id_safe <- function(u) {
+
+  
+
+  message("Fetching: ", u)
+
+  
+
+  inst <- tryCatch(
+
+    oa_fetch(
+
+      entity = "institutions",
+
+      search = u,
+
+      verbose = FALSE
+
+    ),
+
+    error = function(e) NULL
+
+  )
+
+  
+
+  tibble(
+
+    name = u,
+
+    inst_id = if (
+
+      is.null(inst) || nrow(inst) == 0
+
+    ) NA_character_ else inst$id[1]
+
+  )
+
+}
+
+# Load previous progress if it exists
+
+if (file.exists("inst_ids_progress.rds")) {
+
+  
+
+  inst_ids <- readRDS("inst_ids_progress.rds")
+
+  
+
+} else {
+
+  
+
+  inst_ids <- tibble(
+
+    name = university_names,
+
+    inst_id = NA_character_
+
+  )
+
+}
+
+# Only fetch universities still missing IDs
+
+remaining_names <- inst_ids %>%
+
+  filter(is.na(inst_id)) %>%
+
+  pull(name)
+
+# Continue fetching
+
+for (u in remaining_names) {
+
+  
+
+  result <- fetch_inst_id_safe(u)
+
+  
+
+  inst_ids <- inst_ids %>%
+
+    filter(name != u) %>%
+
+    bind_rows(result)
+
+  
+
+  saveRDS(inst_ids, "inst_ids_progress.rds")
+
+}
