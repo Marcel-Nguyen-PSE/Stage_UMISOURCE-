@@ -1,4 +1,4 @@
-# Stage_UMISOURCE-
+// WORK IN PROGRESS //
 
-Some universities are not fetched because of name mismatches (ex: université de cergy -> CY Université Paris), they account for approx 300 observations. I compute them manually, which reduces the amount of mismatches from 295 to 102, which is convenient in this context.
+We try to show evidence of poverty traps in academia. Fetching of bibliometric data and other sources to build a comprehensive longidutinal panel data. The panel data (still WIP) can be found under: Data/tw_panel_merge.csv
 

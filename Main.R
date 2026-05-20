@@ -24,24 +24,22 @@ library(plm)
 library(openalexR)
 library(purrr)
 
-####################################################################################################################
-# Creation and fetching of the panel data 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
 )
 
-qs_2014 <- read_csv('qs_rankings_2014_complete.csv')
-qs_2015 <- read_csv('qs_rankings_2015_complete.csv')
-qs_2016 <- read_csv('qs_rankings_2016_complete.csv')
-qs_2017 <- read_csv('qs_rankings_2017.csv')
-qs_2018 <- read_csv('qs_rankings_2018_complete.csv')
-qs_2019 <- read_csv('qs_rankings_2019.csv')
-qs_2020 <- read_csv('qs_rankings_2020.csv') %>% mutate(year = 2020)
-qs_2021 <- read_csv('qs_rankings_2021.csv') %>% mutate(year = 2021)
-qs_2022 <- read_csv('qs_rankings_2022.csv') %>% mutate(year = 2022)
-qs_2023 <- read_csv('qs_rankings_2023.csv') %>% mutate(year = 2023)
-qs_2024 <- read_csv('qs_rankings_2024.csv') %>% mutate(year = 2024)
-qs_2025 <- read_csv('qs_rankings_2025.csv') %>% mutate(year = 2025)
+qs_2014 <- read_csv('Data/qs_rankings_2014_complete.csv')
+qs_2015 <- read_csv('Data/qs_rankings_2015_complete.csv')
+qs_2016 <- read_csv('Data/qs_rankings_2016_complete.csv')
+qs_2017 <- read_csv('Data/qs_rankings_2017.csv')
+qs_2018 <- read_csv('Data/qs_rankings_2018_complete.csv')
+qs_2019 <- read_csv('Data/qs_rankings_2019.csv')
+qs_2020 <- read_csv('Data/qs_rankings_2020.csv') %>% mutate(year = 2020)
+qs_2021 <- read_csv('Data/qs_rankings_2021.csv') %>% mutate(year = 2021)
+qs_2022 <- read_csv('Data/qs_rankings_2022.csv') %>% mutate(year = 2022)
+qs_2023 <- read_csv('Data/qs_rankings_2023.csv') %>% mutate(year = 2023)
+qs_2024 <- read_csv('Data/qs_rankings_2024.csv') %>% mutate(year = 2024)
+qs_2025 <- read_csv('Data/qs_rankings_2025.csv') %>% mutate(year = 2025)
 
 qs_list <- list(
   qs_2014,
@@ -79,7 +77,7 @@ qs_panel <- bind_rows(qs_list_clean) %>%
     )
   )
 
-tw_panel <- read_csv('/Users/marcel/Stage_UMISOURCE-/THE World University Rankings 2016-2026.csv') %>%
+tw_panel <- read_csv('Data/THE World University Rankings 2016-2026.csv') %>%
   rename(name = 'Name',
         rank = 'Rank',
         scores_overall = 'Overall Score',
@@ -87,7 +85,7 @@ tw_panel <- read_csv('/Users/marcel/Stage_UMISOURCE-/THE World University Rankin
         scores_research = 'Research Quality',
         location = 'Country') 
 
-tw_panel_2011 <- read_csv('2011_2015_rankings.csv') %>%
+tw_panel_2011 <- read_csv('Data/2011_2015_rankings.csv') %>%
   select(-rank_order, -...22, -subjects_offered, -closed, -aliases, -unaccredited, -scores_international_outlook_rank, -scores_research_rank, -scores_citations_rank, -scores_overall_rank, -scores_teaching_rank, -scores_industry_income_rank) 
 
 qs_panel_citations <- qs_panel %>%
@@ -831,45 +829,28 @@ write_csv(tw_panel_merge, "tw_panel_merge.csv")
 write_csv(inst_ids, "inst_ids.csv")
 write_csv(pubs, "pubs.csv")
 
-fetch_citations <- function(inst_id, year, retries = 3) {
-  for (i in seq_len(retries)) {
-    Sys.sleep(0.5)
-    works <- tryCatch(
-      oa_fetch(
-        entity           = "works",
-        institutions.id  = inst_id,
-        publication_year = year,
-        select           = c("cited_by_count"),
-        per_page         = 200,
-        pages            = "all",
-        verbose          = FALSE
-      ),
-      error = function(e) NULL
-    )
-    if (!is.null(works)) break
-    Sys.sleep(5 * i)
-  }
-
-  n <- if (
-    is.null(works) || nrow(works) == 0
-  ) {
-    NA_integer_
-  } else {
-    sum(works$cited_by_count, na.rm = TRUE)
-  }
-  tibble(
-    inst_id = inst_id,
-    year = year,
-    n_citations = n
+fetch_citations <- function(inst_id, year) {
+  message("Fetching: ", inst_id, " | ", year)
+  works <- tryCatch(
+    oa_fetch(
+      entity           = "works",
+      institutions.id  = inst_id,
+      publication_year = as.integer(year),
+      per_page         = 200,
+      verbose          = FALSE
+    ),
+    error = function(e) NULL
   )
+  n <- if (is.null(works) || nrow(works) == 0) NA_integer_ else sum(works$cited_by_count, na.rm = TRUE)
+  tibble(inst_id = inst_id, year = as.integer(year), n_citations = n)
 }
 
 citations <- if (file.exists("citations_progress.rds")) {
   readRDS("citations_progress.rds")
 } else {
   tibble(
-    inst_id = character(),
-    year = integer(),
+    inst_id     = character(),
+    year        = integer(),
     n_citations = integer()
   )
 }
@@ -877,17 +858,14 @@ citations <- if (file.exists("citations_progress.rds")) {
 to_fetch <- tw_panel_merge %>%
   distinct(inst_id, year) %>%
   filter(!is.na(inst_id)) %>%
-  anti_join(
-    citations,
-    by = c("inst_id", "year")
-  )
+  anti_join(citations, by = c("inst_id", "year"))
 
 message(nrow(to_fetch), " requests remaining")
 
 for (i in seq_len(nrow(to_fetch))) {
   result <- fetch_citations(
-    to_fetch$inst_id[i],
-    to_fetch$year[i]
+    to_fetch$inst_id[[i]],
+    to_fetch$year[[i]]
   )
   citations <- bind_rows(citations, result)
   saveRDS(citations, "citations_progress.rds")
@@ -895,4 +873,6 @@ for (i in seq_len(nrow(to_fetch))) {
 
 ################################################################################################################
 
-tw_panel_merge <- read_csv('tw_panel_merge.csv')
+tw_panel_merge <- read_csv('Data/tw_panel_merge.csv') %>%
+   mutate(inst_id = gsub("https://openalex.org/", "", inst_id))
+
