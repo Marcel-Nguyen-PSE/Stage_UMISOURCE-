@@ -871,6 +871,8 @@ for (i in seq_len(nrow(to_fetch))) {
   saveRDS(citations, "citations_progress.rds")
 }
 
+write_csv(citations, "Data/citations.csv")
+
 ################################################################################################################
 
 tw_panel_merge <- read_csv('Data/tw_panel_merge.csv') %>%
