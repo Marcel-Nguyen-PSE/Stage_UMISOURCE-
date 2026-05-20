@@ -831,6 +831,68 @@ write_csv(tw_panel_merge, "tw_panel_merge.csv")
 write_csv(inst_ids, "inst_ids.csv")
 write_csv(pubs, "pubs.csv")
 
+fetch_citations <- function(inst_id, year, retries = 3) {
+  for (i in seq_len(retries)) {
+    Sys.sleep(0.5)
+    works <- tryCatch(
+      oa_fetch(
+        entity           = "works",
+        institutions.id  = inst_id,
+        publication_year = year,
+        select           = c("cited_by_count"),
+        per_page         = 200,
+        pages            = "all",
+        verbose          = FALSE
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(works)) break
+    Sys.sleep(5 * i)
+  }
+
+  n <- if (
+    is.null(works) || nrow(works) == 0
+  ) {
+    NA_integer_
+  } else {
+    sum(works$cited_by_count, na.rm = TRUE)
+  }
+  tibble(
+    inst_id = inst_id,
+    year = year,
+    n_citations = n
+  )
+}
+
+citations <- if (file.exists("citations_progress.rds")) {
+  readRDS("citations_progress.rds")
+} else {
+  tibble(
+    inst_id = character(),
+    year = integer(),
+    n_citations = integer()
+  )
+}
+
+to_fetch <- tw_panel_merge %>%
+  distinct(inst_id, year) %>%
+  filter(!is.na(inst_id)) %>%
+  anti_join(
+    citations,
+    by = c("inst_id", "year")
+  )
+
+message(nrow(to_fetch), " requests remaining")
+
+for (i in seq_len(nrow(to_fetch))) {
+  result <- fetch_citations(
+    to_fetch$inst_id[i],
+    to_fetch$year[i]
+  )
+  citations <- bind_rows(citations, result)
+  saveRDS(citations, "citations_progress.rds")
+}
+
 ################################################################################################################
 
-tw_panel <- read_csv('tw_panel_merge.csv')
+tw_panel_merge <- read_csv('tw_panel_merge.csv')
