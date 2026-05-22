@@ -23,6 +23,7 @@ library(fredr)
 library(plm)
 library(openalexR)
 library(purrr)
+library(np)
 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
@@ -878,3 +879,185 @@ write_csv(citations, "Data/citations.csv")
 tw_panel_merge <- read_csv('Data/tw_panel_merge.csv') %>%
    mutate(inst_id = gsub("https://openalex.org/", "", inst_id))
 
+african_countries <- c(
+
+  "Algeria", "Angola", "Benin", "Botswana",
+
+  "Burkina Faso", "Burundi", "Cameroon",
+
+  "Cape Verde", "Central African Republic",
+
+  "Chad", "Comoros", "Congo",
+
+  "Democratic Republic of the Congo",
+
+  "Djibouti", "Egypt", "Equatorial Guinea",
+
+  "Eritrea", "Eswatini", "Ethiopia",
+
+  "Gabon", "Gambia", "Ghana",
+
+  "Guinea", "Guinea-Bissau", "Ivory Coast",
+
+  "Kenya", "Lesotho", "Liberia",
+
+  "Libya", "Madagascar", "Malawi",
+
+  "Mali", "Mauritania", "Mauritius",
+
+  "Morocco", "Mozambique", "Namibia",
+
+  "Niger", "Nigeria", "Rwanda",
+
+  "Senegal", "Seychelles", "Sierra Leone",
+
+  "Somalia", "South Africa", "South Sudan",
+
+  "Sudan", "Tanzania", "Togo",
+
+  "Tunisia", "Uganda", "Zambia",
+
+  "Zimbabwe"
+
+)
+
+global_north <- c(
+
+  "United States", "Canada", "United Kingdom", "France", "Germany",
+
+  "Italy", "Spain", "Netherlands", "Belgium", "Sweden", "Norway",
+
+  "Denmark", "Finland", "Switzerland", "Austria", "Australia",
+
+  "New Zealand", "Japan", "South Korea", "Singapore",
+
+  "Ireland", "Portugal", "Greece", "Poland", "Czech Republic",
+
+  "Hungary", "Slovakia", "Slovenia", "Estonia", "Latvia", "Lithuania", "Saudi Arabia",
+
+  "Israel", "Russian Federation", "Ukraine", "Taiwan", "Hong Kong", "Romania", "United Arab Emirates", "Croatia", "Iceland", "Luxembourg", "Macao", "Qatar", 
+
+)
+
+global_south <- c(
+
+  "Algeria", "Angola", "Argentina", "Bangladesh", "Brazil",
+
+  "Chile", "China", "Colombia", "Egypt", "Ethiopia",
+
+  "Ghana", "India", "Indonesia", "Iran", "Iraq",
+
+  "Kenya", "Malaysia", "Mexico", "Morocco", "Nigeria",
+
+  "Pakistan", "Peru", "Philippines", "South Africa", "Thailand",
+
+  "Tunisia", "Turkey", "Uganda", "Vietnam", "Zimbabwe", "Mozambique", "Kazakhstan", "Georgia", "Sri Lanka", "Paraguay", "Jordan", "Syria", "Lebanon", "Palestine", "Tanzania", "Brunei Darussalam", "Azerbaijan", "Botswana", "Namibia", "Cuba", "Kuwait", "Belarus", "Costa Rica", "Cyprus", "Uzbekistan", "Fiji", "Oman", "Bulgaria", "Uzbekistan", "Montenegro",
+  "Ecuador", "Puerto Rico", "Venezuela", "Mauritius", "Kosovo", "Rwanda", "Nepal", "Jamaica", "Mongolia", "Zambia", "Bosnia and Herzegovina", "Bulgaria", "Serbia", "Czechia", "Armenia", "Northern Macedonia", "Bahrain"
+
+)
+view(global_south)
+
+panel_kernel <- tw_panel_merge %>%
+  arrange(inst_id, year) %>%
+  group_by(inst_id) %>%
+  mutate(
+    research_t  = log1p(n_publications),
+    research_t1 = dplyr::lead(log1p(n_publications))
+  ) %>%
+  ungroup() %>%
+  filter(
+    !is.na(research_t),
+    !is.na(research_t1)
+  ) %>%
+  mutate(
+    north_south = case_when(
+      location %in% global_north ~ "North",
+      location %in% global_south ~ "South",
+      TRUE ~ NA_character_
+    )
+  )
+
+south_data <- panel_kernel %>%
+  filter(north_south == "South")
+
+north_data <- panel_kernel %>%
+  filter(north_south == "North")
+
+kernel_model <- npreg(
+  research_t1 ~ research_t,
+  data = panel_kernel
+)
+
+kernel_model_south <- npreg(
+  research_t1 ~ research_t,
+  data = south_data
+)
+
+kernel_model_north <- npreg(
+  research_t1 ~ research_t,
+  data = north_data
+)
+
+grid <- data.frame(
+  research_t = seq(
+    min(panel_kernel$research_t),
+    max(panel_kernel$research_t),
+    length.out = 300
+  )
+)
+
+grid$research_t1_hat <- predict(kernel_model, newdata = grid)
+
+ggplot(grid, aes(x = research_t, y = research_t1_hat)) +
+  geom_line(linewidth = 1) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "Research stock at t: log(1 + publications)",
+    y = "Research stock at t+1: log(1 + publications)",
+    title = "Kernel-estimated research transition function"
+  ) +
+  theme_minimal()
+
+grid_south <- data.frame(
+  research_t = seq(
+    min(south_data$research_t),
+    max(south_data$research_t),
+    length.out = 300
+  )
+)
+
+grid_south$research_t1_hat <- predict(kernel_model_south, newdata = grid_south)
+
+ggplot(grid_south, aes(x = research_t, y = research_t1_hat)) +
+  geom_line(linewidth = 1) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "Research stock at t: log(1 + publications)",
+    y = "Research stock at t+1: log(1 + publications)",
+    title = "Kernel-estimated research transition function"
+  ) +
+  theme_minimal()
+
+grid_north <- data.frame(
+  research_t = seq(
+    min(north_data$research_t),
+    max(north_data$research_t),
+    length.out = 300
+  )
+)
+
+grid_north$research_t1_hat <- predict(kernel_model_north, newdata = grid_north)
+
+ggplot(grid_north, aes(x = research_t, y = research_t1_hat)) +
+  geom_line(linewidth = 1) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "Research stock at t: log(1 + publications)",
+    y = "Research stock at t+1: log(1 + publications)",
+    title = "Kernel-estimated research transition function"
+  ) +
+  theme_minimal()
+
+is_na_north <- panel_kernel %>%
+  filter(is.na(north_south)) %>%
+  pull(location) 
