@@ -856,6 +856,7 @@ citations <- if (file.exists("citations_progress.rds")) {
   )
 }
 
+
 to_fetch <- tw_panel_merge %>%
   distinct(inst_id, year) %>%
   filter(!is.na(inst_id)) %>%
@@ -935,7 +936,7 @@ global_north <- c(
 
   "Hungary", "Slovakia", "Slovenia", "Estonia", "Latvia", "Lithuania", "Saudi Arabia",
 
-  "Israel", "Russian Federation", "Ukraine", "Taiwan", "Hong Kong", "Romania", "United Arab Emirates", "Croatia", "Iceland", "Luxembourg", "Macao", "Qatar", 
+  "Israel", "Russian Federation", "Ukraine", "Taiwan", "Hong Kong", "Romania", "United Arab Emirates", "Croatia", "Iceland", "Luxembourg", "Macao", "Qatar"
 
 )
 
@@ -1061,3 +1062,4 @@ ggplot(grid_north, aes(x = research_t, y = research_t1_hat)) +
 is_na_north <- panel_kernel %>%
   filter(is.na(north_south)) %>%
   pull(location) 
+
