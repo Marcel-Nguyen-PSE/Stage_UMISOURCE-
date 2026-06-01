@@ -139,7 +139,7 @@ manual_matches <- tribble(
 
   "University of Health Sciences, Turkey", "University of Health Sciences",
 
-  "University of La Rochelle", "La Rochelle University",
+  "University of La Rochelle", "La Rochelle Université",
 
   "University of Lampung", "Universitas Lampung",
 
@@ -278,7 +278,7 @@ manual_matches <- tribble(
 
   "Blaise Pascal University", "Blaise Pascal University",
 
-  "Blida 1 University", "Blida 1 University",
+  "Blida 1 University", "University of Blida",
 
   "Botswana International University of Science and Technology (BIUST)", "Botswana International University of Science and Technology",
 
@@ -395,7 +395,7 @@ manual_matches <- tribble(
 
   "Jinan University (China)", "Jinan University",
 
-  "K.N. Toosi University of Technology", "KN Toosi University of Technology",
+  "K.N. Toosi University of Technology", "K.N.Toosi University of Technology",
 
   "KLE Academy of Higher Education and Research", "KLE Academy of Higher Education and Research",
 
@@ -754,7 +754,7 @@ if (file.exists("inst_ids_progress.rds")) {
   inst_ids <- readRDS("inst_ids_progress.rds")
 } else {
   inst_ids <- tibble(
-    name = university_names,
+    name = names_format,
     inst_id = NA_character_
   )
 }
@@ -884,7 +884,7 @@ write_csv(citations, "Data/citations.csv")
 
 ################################################################################################################
 
-tw_panel_merge <- read_csv('Data/tw_panel_merge.csv') %>%
+tw_panel_merge <- read_csv('tw_panel_merge.csv') %>%
    mutate(inst_id = gsub("https://openalex.org/", "", inst_id))
 
 african_countries <- c(
@@ -1077,3 +1077,364 @@ tw_panel_merge <- tw_panel_merge %>%
   group_by(inst_id, name) %>%
   complete(year = 2011:2026) %>%
   ungroup()
+
+tw_panel_merge <- tw_panel_merge %>%
+  left_join(
+    pubs %>% select(inst_id, year, n_publications),
+    by = c("inst_id", "year"),
+    suffix = c("", "_pubs")
+  ) %>%
+  mutate(
+    n_publications = coalesce(n_publications, n_publications_pubs)
+  ) %>%
+  select(-n_publications_pubs)
+
+tw_panel_merge <- tw_panel_merge %>%
+  mutate(
+    name = dplyr::recode(
+      name,
+      "Abou Bekr Belkaid University of Tlemcen" = "University of Abou Bekr Belkaïd",
+      "Amity University Kolkata" = "Amity University",
+      "Antonio Narino University" = "Antonio Nariño",
+      "Adana Alparslan Turkes Science and Technology University" = "Adana Alparslan Türkeş Science and Technology University",
+      "Autonomous University of Nuevo Leon" = "Universidad Autónoma de Nuevo León",
+      "Autonomous University of San Luis Potosi" = "Universidad Autónoma de San Luis Potosí",
+      "Autonomous University of the State of Mexico" = "Universidad Autónoma del Estado de México",
+      "Aydin Adnan Menderes University" = "Adnan Menderes University",
+      "B S Abdur Rahman Crescent Institute of Science and Technology" = "B.S. Abdur Rahman Crescent Institute of Science and Technology",
+      "Babes Bolyai University" = "Babeș-Bolyai University",
+      "Bezmialem Vakif University" = "Bezmialem Vakıf University",
+      "Blaise Pascal University" = "Université Clermont Auvergne",
+      "Blida 1 University" = "University of Blida",
+      "CEFET RJ" = "CEFET-RJ",
+      "CY Cergy Paris Universite" = "CY Cergy Paris Université",
+      "Campus Bio Medico University of Rome" = "Campus Bio-Medico University of Rome",
+      "Cankaya University" = "Çankaya University",
+      "Delta State University Abraka" = "Delta State University",
+      "Dmitry Mendeleev University of Chemical Technology" = "Mendeleev University of Chemical Technology",
+      "Dr BR Ambedkar National Institute of Technology Jalandhar" = "Dr. B.R. Ambedkar National Institute of Technology Jalandhar",
+      "Dr D Y Patil Vidyapeeth" = "Dr. D.Y. Patil Vidyapeeth",
+      "European University of Madrid" = "Universidad Europea de Madrid",
+      "Federal Institute of Sao Paulo" = "Federal Institute of Education, Science and Technology of São Paulo",
+      "Federal Rural University of the Semi Arid Region" = "Universidade Federal Rural do Semi-Árido",
+      "Federal University of Agriculture Abeokuta" = "Federal University of Agriculture, Abeokuta",
+      "Federal University of Ceara" = "Universidade Federal do Ceará",
+      "Federal University of Jequitinhonha and Mucuri Valleys" = "Universidade Federal dos Vales do Jequitinhonha e Mucuri",
+      "Federal University of Maranhao" = "Universidade Federal do Maranhão",
+      "Federal University of Paraiba" = "Universidade Federal da Paraíba",
+      "Federal University of Parana" = "Universidade Federal do Paraná",
+      "Federal University of Technology Parana" = "Universidade Tecnológica Federal do Paraná",
+      "Ferhat Abbas Setif University 1" = "Université Ferhat Abbas Sétif 1",
+      "Firat University" = "Fırat University",
+      "GB Pant University of Agriculture and Technology" = "G.B. Pant University of Agriculture and Technology",
+      "GMR Institute of Technology" = "GMR Institute of Technology",
+      "Gheorghe Asachi Technical University of Iasi" = "Gheorghe Asachi Technical University of Iași",
+      "Hamadan University of Medical Sciences" = "Hamadan University of Medical Sciences",
+      "Hatay Mustafa Kemal University" = "Mustafa Kemal University",
+      "Humboldt University Berlin" = "Humboldt-Universität zu Berlin",
+      "Ibn Khaldoun University" = "Ibn Khaldoun University of Tiaret",
+      "Ibn Zohr University" = "Université Ibn Zohr",
+      "Islamic Azad University Najafabad Branch" = "Islamic Azad University, Najafabad Branch",
+      "Islamic Science University of Malaysia" = "Universiti Sains Islam Malaysia",
+      "Istanbul Okan University" = "İstanbul Okan University",
+      "Iuliu Hatieganu University of Medicine and Pharmacy" = "Iuliu Hațieganu University of Medicine and Pharmacy",
+      "KLE Academy of Higher Education and Research" = "KLE University",
+      "KN Toosi University of Technology" = "K.N. Toosi University of Technology",
+      "Karamanoglu Mehmetbey University" = "Karamanoğlu Mehmetbey University",
+      "Kazan National Research Technological University" = "Kazan National Research Technological University",
+      "Kirikkale University" = "Kırıkkale University",
+      "La Rochelle University" = "La Rochelle Université",
+      "Larbi Tebessi University" = "Université Larbi Tébessi",
+      "Lille 2 University" = "Université de Lille",
+      "Lusophone University" = "Universidade Lusófona",
+      "MISIS University" = "NUST MISIS",
+      "MNS University of Agriculture" = "MNS University of Agriculture, Multan",
+      "MS Ramaiah University of Applied Sciences" = "M.S. Ramaiah University of Applied Sciences",
+      "Maria Curie Sklodowska University" = "Maria Curie-Skłodowska University",
+      "Medical University of Bialystok" = "Medical University of Białystok",
+      "Mhamed Bougara University of Boumerdes" = "Université M'Hamed Bougara de Boumerdès",
+      "Mohammed First University" = "Mohammed Premier University",
+      "Mohammed VI Polytechnic University" = "Mohammed VI Polytechnic University",
+      "Moscow Technical University of Communications and Informatics" = "Moscow Technical University of Communications and Informatics",
+      "Moulay Ismail University" = "Université Moulay Ismaïl",
+      "Mugla Sitki Kocman University" = "Muğla Sıtkı Koçman University",
+      "NOVA University Lisbon" = "Universidade NOVA de Lisboa",
+      "National University of the South" = "Universidad Nacional del Sur",
+      "Northeastern University China" = "Northeastern University",
+      "OP Jindal Global University" = "O.P. Jindal Global University",
+      "Ondokuz Mayis University" = "Ondokuz Mayıs University",
+      "Ovidius University of Constanta" = "Ovidius University of Constanța",
+      "Ozyeegin University" = "Özyeğin University",
+      "Pavol Jozef Safarik University" = "Pavol Jozef Šafárik University",
+      "Poznan University of Technology" = "Poznań University of Technology",
+      "RV College of Engineering" = "R.V. College of Engineering",
+      "Regional Autonomous University of Los Andes" = "Universidad Regional Autónoma de los Andes",
+      "Reshetnev Siberian State University" = "Reshetnev Siberian State University of Science and Technology",
+      "Rutgers University New Brunswick" = "Rutgers University–New Brunswick",
+      "SantAnna School of Advanced Studies" = "Sant'Anna School of Advanced Studies",
+      "Scotlands Rural College" = "Scotland's Rural College",
+      "Soochow University Taiwan" = "Soochow University",
+      "Technische Universitat Ilmenau" = "Technische Universität Ilmenau",
+      "Tomsk State University of Control Systems and Radioelectronics" = "Tomsk State University of Control Systems and Radioelectronics",
+      "Universidad Andres Bello" = "Universidad Andrés Bello",
+      "Universidad Autonoma de Guerrero" = "Universidad Autónoma de Guerrero",
+      "Universidad de Especialidades Espiritu Santo" = "Universidad de Especialidades Espíritu Santo",
+      "Universidad de Los Andes Venezuela" = "Universidad de Los Andes",
+      "Universite Bourgogne Franche Comte" = "Bourgogne Franche-Comté",
+      "Universite Cote dAzur" = "Université Côte d'Azur",
+      "Universite Nice Sophia Antipolis" = "Université Côte d'Azur",
+      "University of Cadiz" = "Universidad de Cádiz",
+      "University of Manouba" = "Université de la Manouba",
+      "University of Mascara" = "Université de Mascara",
+      "University of Medellin" = "Universidad de Medellín",
+      "University of Vale do Rio dos Sinos" = "Universidade do Vale do Rio dos Sinos",
+      "Vignan University" = "Vignan's Foundation for Science, Technology and Research",
+      "Western Parana State University" = "Universidade Estadual do Oeste do Paraná",
+      "Xian Jiaotong Liverpool University" = "Xi'an Jiaotong-Liverpool University",
+      "Xuzhou Medical University" = "Xuzhou Medical University",
+      .default = name
+    )
+  )
+
+names_format <- tw_panel_merge %>%
+  dplyr::select(inst_id, name) %>%
+  filter(is.na(inst_id)) %>%
+  pull(name)
+
+if (file.exists("inst_ids_progress.rds")) {
+  inst_ids <- readRDS("inst_ids_progress.rds")
+} else {
+  inst_ids <- tibble(
+    name = names_format,
+    inst_id = NA_character_
+  ) %>%
+    distinct(name, inst_id)
+}
+
+for(i in seq_len(nrow(inst_ids))) {
+
+  if(is.na(inst_ids$inst_id[i])) {
+
+    cat("Fetching:", inst_ids$name[i], "\n")
+
+    inst <- tryCatch(
+      oa_fetch(
+        entity = "institutions",
+        search = inst_ids$name[i],
+        verbose = FALSE
+      ),
+      error = function(e) NULL
+    )
+
+    if(!is.null(inst) && nrow(inst) > 0) {
+      inst_ids$inst_id[i] <- inst$id[1]
+    }
+
+    Sys.sleep(0.1)
+  }
+}
+
+inst_ids <- inst_ids %>%
+  mutate(
+    inst_id = sub("https://openalex.org/", "", inst_id)
+  )
+
+tw_panel_merge <- tw_panel_merge %>%
+  left_join(
+    inst_ids %>% 
+      select(name, inst_id_new = inst_id),
+    by = "name"
+  ) %>%
+  mutate(
+    inst_id = coalesce(inst_id, inst_id_new)
+  ) %>%
+  select(-inst_id_new)
+
+inst_ids2 <- inst_ids %>%
+  filter(is.na(inst_id)) %>%
+  mutate(name = dplyr::recode(
+    name,
+    "B.S. Abdur Rahman Crescent Institute of Science and Technology" = "Abdur Rahman",
+
+    "Université Blida 1" = "Blida",
+
+    "Campus Bio-Medico University of Rome" = "Università Campus Bio-Medico",
+
+    "Mendeleev University of Chemical Technology" = "Mendeleev",
+
+    "Dr. B.R. Ambedkar National Institute of Technology Jalandhar" = "Ambedkar",
+
+    "Federal Institute of Education, Science and Technology of São Paulo" = "Federal Institute of São Paulo",
+
+    "Federal University of Agriculture, Abeokuta" = "Moshood Abiola Polytechnic",
+
+    "Université Ferhat Abbas Sétif 1" = "Ferhat Abbas",
+
+    "G.B. Pant University of Agriculture and Technology" = "Govind Ballabh Pant University of Agriculture and Technology",
+
+    "HSE University" = "National Research University Higher School of Economics",
+
+    "Ibn Khaldoun University of Tiaret" = "Université IBN Khaldoun Tiaret",
+
+    "Islamic Azad University, Najafabad Branch" = "Islamic Azad University, Tehran",
+
+    "İstanbul Okan University" = "Okan University",
+
+    "K.N. Toosi University of Technology" = "K.N.Toosi University of Technology",
+
+    "Kazan National Research Technological University" = "Kazan Federal University",
+
+    "NUST MISIS" = "National University of Science and Technology",
+
+    "MNS University of Agriculture, Multan" = "Muhammad Nawaz Sharif University of Engineering & Technology",
+
+    "M.S. Ramaiah University of Applied Sciences" = "M S Ramaiah University of Applied Sciences",
+
+    "Medical University of Innsbruck" = "Universität Innsbruck",
+
+    "Université M'Hamed Bougara de Boumerdès" = "Boumerdes",
+
+    "Mohammed Premier University" = "Mohamed I University",
+
+    "Mohammed VI Polytechnic University" = "Université Mohammed VI Polytechnique",
+
+    "Moscow Technical University of Communications and Informatics" = "Moscow Technical University of Communications and Informatics",
+
+    "Université Moulay Ismaïl" = "Université Moulay Ismail de Meknes",
+
+    "O.P. Jindal Global University" = "O. P. Jindal Global University",
+
+    "Ovidius University of Constanța" = "Ovidius University",
+
+    "Qom University of Medical Sciences" = "Qom University of Medical Science and Health Services",
+
+    "Tomsk State University of Control Systems and Radioelectronics" = "Tomsk State University of Control Systems and Radioelectronics",
+
+    "Xi'an Jiaotong-Liverpool University" = "Xi'an Jiaotong University",
+
+    .default = name
+  ))
+
+tw_panel_merge <- tw_panel_merge %>%
+  mutate(name = dplyr::recode(
+    name,
+    "B.S. Abdur Rahman Crescent Institute of Science and Technology" = "Abdur Rahman",
+
+    "Université Blida 1" = "Blida",
+
+    "Campus Bio-Medico University of Rome" = "Università Campus Bio-Medico",
+
+    "Mendeleev University of Chemical Technology" = "Mendeleev",
+
+    "Dr. B.R. Ambedkar National Institute of Technology Jalandhar" = "Ambedkar",
+
+    "Federal Institute of Education, Science and Technology of São Paulo" = "Federal Institute of São Paulo",
+
+    "Federal University of Agriculture, Abeokuta" = "Moshood Abiola Polytechnic",
+
+    "Université Ferhat Abbas Sétif 1" = "Ferhat Abbas",
+
+    "G.B. Pant University of Agriculture and Technology" = "Govind Ballabh Pant University of Agriculture and Technology",
+
+    "HSE University" = "National Research University Higher School of Economics",
+
+    "Ibn Khaldoun University of Tiaret" = "Université IBN Khaldoun Tiaret",
+
+    "Islamic Azad University, Najafabad Branch" = "Islamic Azad University, Tehran",
+
+    "İstanbul Okan University" = "Okan University",
+
+    "K.N. Toosi University of Technology" = "K.N.Toosi University of Technology",
+
+    "Kazan National Research Technological University" = "Kazan Federal University",
+
+    "NUST MISIS" = "National University of Science and Technology",
+
+    "MNS University of Agriculture, Multan" = "Muhammad Nawaz Sharif University of Engineering & Technology",
+
+    "M.S. Ramaiah University of Applied Sciences" = "M S Ramaiah University of Applied Sciences",
+
+    "Medical University of Innsbruck" = "Universität Innsbruck",
+
+    "Université M'Hamed Bougara de Boumerdès" = "Boumerdes",
+
+    "Mohammed Premier University" = "Mohamed I University",
+
+    "Mohammed VI Polytechnic University" = "Université Mohammed VI Polytechnique",
+
+    "Moscow Technical University of Communications and Informatics" = "Moscow Technical University of Communications and Informatics",
+
+    "Université Moulay Ismaïl" = "Université Moulay Ismail de Meknes",
+
+    "O.P. Jindal Global University" = "O. P. Jindal Global University",
+
+    "Ovidius University of Constanța" = "Ovidius University",
+
+    "Qom University of Medical Sciences" = "Qom University of Medical Science and Health Services",
+
+    "Tomsk State University of Control Systems and Radioelectronics" = "Tomsk State University of Control Systems and Radioelectronics",
+
+    "Xi'an Jiaotong-Liverpool University" = "Xi'an Jiaotong University",
+
+    .default = name
+  ))
+
+tw_panel_merge <- tw_panel_merge %>%
+
+  left_join(
+
+    pubs %>%
+
+      select(inst_id, year, n_publications_pubs = n_publications),
+
+    by = c("inst_id", "year")
+
+  ) %>%
+
+  mutate(
+
+    n_publications = coalesce(n_publications, n_publications_pubs)
+
+  ) %>%
+
+  select(-n_publications_pubs)
+
+tw_panel_merge <- tw_panel_merge %>%
+  group_by(inst_id) %>%
+  fill(location, .direction = "downup") %>%
+  ungroup()
+
+inst_id_fin <- tw_panel_merge %>%
+  distinct(inst_id) 
+
+fetch_type_safe <- function(id) {
+
+  cat("Fetching:", id, "\n")
+
+  inst <- tryCatch(
+    oa_fetch(
+      entity = "institutions",
+      identifier = id,
+      verbose = FALSE
+    ),
+    error = function(e) NULL
+  )
+
+  tibble(
+    inst_id = id,
+    type = if (
+      is.null(inst) || nrow(inst) == 0
+    ) NA_character_ else inst$type[1]
+  )
+}
+
+inst_types <- purrr::map_dfr(
+  inst_id_fin$inst_id,
+  fetch_type_safe
+)
+
+tw_panel_merge <- tw_panel_merge %>%
+  left_join(
+    inst_types,
+    by = "inst_id"
+  )
