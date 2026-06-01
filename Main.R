@@ -817,7 +817,8 @@ message(nrow(to_fetch), " requests remaining")
 to_fetch <- tw_panel_merge %>%
   filter(is.na(n_publications)) %>%
   distinct(inst_id, year) %>%
-  filter(!is.na(inst_id)) 
+  filter(!is.na(inst_id)) %>%
+  anti_join(pubs, by = c("inst_id", "year"))
   
 
 for (i in seq_len(nrow(to_fetch))) {
