@@ -814,6 +814,12 @@ to_fetch <- tw_panel_merge %>%
 
 message(nrow(to_fetch), " requests remaining")
 
+to_fetch <- tw_panel_merge %>%
+  filter(is.na(n_publications)) %>%
+  distinct(inst_id, year) %>%
+  filter(!is.na(inst_id)) 
+  
+
 for (i in seq_len(nrow(to_fetch))) {
   result <- fetch_pubs(to_fetch$inst_id[i], to_fetch$year[i])
   pubs   <- bind_rows(pubs, result)
@@ -1063,3 +1069,10 @@ is_na_north <- panel_kernel %>%
   filter(is.na(north_south)) %>%
   pull(location) 
 
+################################################
+
+tw_panel_merge <- tw_panel_merge %>%
+  mutate(year = as.integer(year)) %>%
+  group_by(inst_id, name) %>%
+  complete(year = 2011:2026) %>%
+  ungroup()
