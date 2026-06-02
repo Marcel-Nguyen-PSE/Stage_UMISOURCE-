@@ -1,3 +1,48 @@
+# Liste des packages nécessaires
+packages <- c(
+  "tidyverse",
+  "readxl",
+  "rio",
+  "xtable",
+  "here",
+  "gtsummary",
+  "glue",
+  "scales",
+  "patchwork",
+  "stargazer",
+  "sandwich",
+  "lmtest",
+  "AER",
+  "car",
+  "haven",
+  "fixest",
+  "sf",
+  "did",
+  "rdrobust",
+  "TwoWayFEWeights",
+  "Synth",
+  "fredr",
+  "plm",
+  "openalexR",
+  "purrr",
+  "np"
+)
+
+# Installation des packages manquants
+packages_manquants <- packages[!(packages %in% installed.packages()[, "Package"])]
+
+if (length(packages_manquants) > 0) {
+  install.packages(packages_manquants, dependencies = TRUE)
+}
+
+# Chargement des packages
+invisible(lapply(packages, library, character.only = TRUE))
+
+cat("Tous les packages sont installés et chargés.\n")
+
+
+
+
 library(tidyverse)
 library(readxl)
 library(rio)
@@ -884,7 +929,7 @@ write_csv(citations, "Data/citations.csv")
 
 ################################################################################################################
 
-tw_panel_merge <- read_csv('Data/tw_panel_merge.csv') %>%
+tw_panel_merge <- read_csv('tw_panel_merge.csv') %>%
    mutate(inst_id = gsub("https://openalex.org/", "", inst_id))
 
 african_countries <- c(
