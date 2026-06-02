@@ -1437,4 +1437,25 @@ tw_panel_merge <- tw_panel_merge %>%
   left_join(
     inst_types,
     by = "inst_id"
+  ) %>%
+  mutate(
+    inst_id = sub("https://openalex.org/", "", inst_id)
   )
+
+tw_panel_merge <- tw_panel_merge %>%
+  mutate(
+    name = if_else(
+      inst_id == "I188760350",
+      "Ollscoil na Gaillimhe – University of Galway",
+      name
+    ),
+    location = if_else(
+      inst_id == "I188760350",
+      "Ireland",
+      location
+    )
+  )
+
+write_csv(tw_panel_merge, 'df_panel.csv')
+
+################################
