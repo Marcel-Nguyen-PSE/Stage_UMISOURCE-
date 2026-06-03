@@ -60,7 +60,7 @@ to_fetch <- df %>%
   filter(!is.na(inst_id)) %>%
   anti_join(citations, by = c("inst_id", "year"))
 
-message(nrow(to_fetch), " requests remaining")
+message(nrow(to_fetch), " requests remaining and")
 
 for (i in seq_len(nrow(to_fetch))) {
   result <- fetch_citations(
