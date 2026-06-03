@@ -42,7 +42,7 @@ cat("Tous les packages sont installés et chargés.\n")
 
 
 
-
+library(progressr)
 library(tidyverse)
 library(readxl)
 library(rio)
@@ -69,6 +69,7 @@ library(plm)
 library(openalexR)
 library(purrr)
 library(np)
+library(furrr)
 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
