@@ -1,5 +1,7 @@
 df <- read_csv('df_panel.csv')
 
+plan(multisession, workers = 6)
+
 fetch_citations <- function(inst_id, year, retries = 5) {
   Sys.sleep(runif(1, 0.5, 1.0))  # base jitter before every request
   
