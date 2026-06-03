@@ -65,7 +65,7 @@ to_fetch <- df %>%
 
 message(nrow(to_fetch), " requests remaining")
 
-for (i in seq_len(nrow(to_fetch))) {
+for (i in seq_len( nrow(to_fetch))) {
   result <- fetch_citations(
     to_fetch$inst_id[[i]],
     to_fetch$year[[i]]

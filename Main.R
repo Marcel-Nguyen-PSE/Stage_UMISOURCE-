@@ -73,7 +73,7 @@ library(np)
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
 )
-
+#######################################################################################################################
 qs_2014 <- read_csv('Data/qs_rankings_2014_complete.csv')
 qs_2015 <- read_csv('Data/qs_rankings_2015_complete.csv')
 qs_2016 <- read_csv('Data/qs_rankings_2016_complete.csv')
