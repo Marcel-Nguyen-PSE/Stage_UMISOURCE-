@@ -1505,3 +1505,599 @@ tw_panel_merge <- tw_panel_merge %>%
 write_csv(tw_panel_merge, 'df_panel.csv')
 
 ################################
+
+write_csv(df, 'df_panel.csv')
+
+library(countrycode)
+library(WDI)
+
+df <- df %>%
+  mutate(
+    country_code = countrycode(
+      location,
+      origin = "country.name",
+      destination = "iso3c"
+    )
+  )
+
+rd_exp <- WDI(
+  country = "all",
+  indicator = "GB.XPD.RSDV.GD.ZS",
+  start = min(df$year, na.rm = TRUE),
+  end = max(df$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    rd_exp_gdp = GB.XPD.RSDV.GD.ZS
+  )
+
+df <- df %>%
+  left_join(
+    rd_exp,
+    by = c("country_code", "year"))
+
+ed_exp <- WDI(
+  country = "all",
+  indicator = "SE.XPD.TOTL.GD.ZS",
+  start = min(df$year, na.rm = TRUE),
+  end = max(df$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    ed_exp_gdp = SE.XPD.TOTL.GD.ZS
+  )
+
+df <- df %>%
+  select( -rd_exp_gdp.y, -rd_exp_gdp.x)
+
+df <- df %>%
+  left_join(
+    ed_exp,
+    by = c("country_code", "year")
+  )
+
+pat <- WDI(
+  country = "all",
+  indicator = "IP.PAT.RESD",
+  start = min(df$year, na.rm = TRUE),
+  end = max(df$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    pat = IP.PAT.RESD
+  )
+
+df <- df %>%
+  left_join(
+    pat,
+    by = c("country_code", "year")
+  )
+
+net_us <- WDI(
+  country = "all",
+  indicator = "IT.NET.USER.ZS",
+  start = min(df$year, na.rm = TRUE),
+  end = max(df$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    net_us = IT.NET.USER.ZS
+  )
+
+df <- df %>%
+  left_join(
+    net_us,
+    by = c("country_code", "year")
+  )
+
+gdp_cap <- WDI(
+  country = "all",
+  indicator = "NY.GDP.PCAP.KD",
+  start = min(df$year, na.rm = TRUE),
+  end = max(df$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    gdp_cap = NY.GDP.PCAP.KD
+  )
+
+df <- df %>%
+  left_join(
+    gdp_cap,
+    by = c("country_code", "year")
+  )
+
+df <- df %>%
+  mutate(
+    north_south = case_when(
+      location %in% global_north ~ "North",
+      location %in% global_south ~ "South",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  mutate(north_south = if_else(north_south == 'North', 1, 0))
+
+df <- df %>%
+  arrange(inst_id, year) %>%
+  group_by(inst_id) %>%
+  mutate(
+    research_t  = log1p(n_publications),
+    research_t1 = dplyr::lead(log1p(n_publications))
+  ) %>%
+  ungroup() %>%
+  filter(
+    !is.na(research_t),
+    !is.na(research_t1)
+  )
+
+df <- df %>%
+  distinct(inst_id, year, .keep_all = TRUE)
+
+#############################################################
+
+df_kernel <- df %>%
+  filter(
+    !is.na(research_t),
+    !is.na(research_t1),
+    !is.na(north_south)
+  )
+
+df_south <- df_kernel %>% filter(north_south == 0)
+df_north <- df_kernel %>% filter(north_south == 1)
+df_pooled <- df_kernel
+
+kernel_south <- npreg(research_t1 ~ research_t, data = df_south)
+kernel_north <- npreg(research_t1 ~ research_t, data = df_north)
+kernel_pooled <- npreg(research_t1 ~ research_t, data = df_pooled)
+
+grid <- data.frame(
+  research_t = seq(
+    min(df_kernel$research_t, na.rm = TRUE),
+    max(df_kernel$research_t, na.rm = TRUE),
+    length.out = 300
+  )
+)
+
+pred_south <- grid %>%
+  mutate(
+    research_t1_hat = predict(kernel_south, newdata = grid),
+    sample = "South"
+  )
+
+pred_north <- grid %>%
+  mutate(
+    research_t1_hat = predict(kernel_north, newdata = grid),
+    sample = "North"
+  )
+
+pred_pooled <- grid %>%
+  mutate(
+    research_t1_hat = predict(kernel_pooled, newdata = grid),
+    sample = "Pooled"
+  )
+
+pred_all <- bind_rows(
+  pred_south,
+  pred_north,
+  pred_pooled
+)
+
+ggplot(pred_all, aes(x = research_t, y = research_t1_hat, linetype = sample)) +
+  geom_line(linewidth = 1) +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "Research stock at t: log(1 + publications)",
+    y = "Research stock at t+1: log(1 + publications)",
+    title = "Kernel-estimated research transition functions",
+    linetype = "Sample"
+  ) +
+  theme_minimal()
+
+african_codes <- c(
+  "DZA","AGO","BEN","BWA","BFA","BDI","CPV","CMR","CAF","TCD",
+  "COM","COD","COG","CIV","DJI","EGY","GNQ","ERI","SWZ","ETH",
+  "GAB","GMB","GHA","GIN","GNB","KEN","LSO","LBR","LBY","MDG",
+  "MWI","MLI","MRT","MUS","MAR","MOZ","NAM","NER","NGA","RWA",
+  "STP","SEN","SYC","SLE","SOM","ZAF","SSD","SDN","TZA","TGO",
+  "TUN","UGA","ZMB","ZWE"
+)
+
+df <- df %>%
+  mutate(
+    africa_dummy = if_else(country_code %in% african_codes, 1L, 0L)
+  )
+
+eu_codes <- c(
+  "AUT", # Austria
+  "BEL", # Belgium
+  "BGR", # Bulgaria
+  "HRV", # Croatia
+  "CYP", # Cyprus
+  "CZE", # Czech Republic
+  "DNK", # Denmark
+  "EST", # Estonia
+  "FIN", # Finland
+  "FRA", # France
+  "DEU", # Germany
+  "GRC", # Greece
+  "HUN", # Hungary
+  "IRL", # Ireland
+  "ITA", # Italy
+  "LVA", # Latvia
+  "LTU", # Lithuania
+  "LUX", # Luxembourg
+  "MLT", # Malta
+  "NLD", # Netherlands
+  "POL", # Poland
+  "PRT", # Portugal
+  "ROU", # Romania
+  "SVK", # Slovakia
+  "SVN", # Slovenia
+  "ESP", # Spain
+  "SWE"  # Sweden
+)
+
+df <- df %>%
+  mutate(
+    eu_dummy = if_else(country_code %in% eu_codes, 1, 0)
+  )
+
+library(dplyr)
+library(np)
+library(ggplot2)
+
+df_africa <- df %>%
+  filter(
+    africa_dummy == 1,
+    !is.na(research_t),
+    !is.na(research_t1)
+  )
+
+kernel_model_africa <- npreg(
+  research_t1 ~ research_t,
+  data = df_africa
+)
+
+grid_africa <- data.frame(
+  research_t = seq(
+    min(df_africa$research_t),
+    max(df_africa$research_t),
+    length.out = 300
+  )
+)
+
+grid_africa$research_t1_hat <- predict(
+  kernel_model_africa,
+  newdata = grid_africa
+)
+
+ggplot(grid_africa,
+       aes(x = research_t,
+           y = research_t1_hat)) +
+  geom_line(linewidth = 1) +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "Research stock at t: log(1 + publications)",
+    y = "Research stock at t+1: log(1 + publications)",
+    title = "Kernel-estimated research transition function, Africa"
+  ) +
+  theme_minimal()
+
+grid_africa <- grid_africa %>%
+
+  mutate(
+
+    growth_hat = research_t1_hat - research_t
+
+  )
+
+ggplot(grid_africa,
+
+       aes(research_t, growth_hat)) +
+
+  geom_line(linewidth = 1) +
+
+  geom_hline(yintercept = 0,
+
+             linetype = "dashed") +
+
+  labs(
+
+    x = "Research stock",
+
+    y = "Expected growth",
+
+    title = "Expected growth function, Africa"
+
+  ) +
+
+  theme_minimal()
+
+n_universities <- df %>%
+  distinct(name)
+
+df_plot <- df %>%
+  filter(
+    africa_dummy == 1,
+    !is.na(research_t),
+    !is.na(country_code)
+  )
+
+ggplot(df_plot, aes(x = research_t)) +
+  geom_density(linewidth = 1) +
+  geom_vline(
+    xintercept = quantile(df_plot$research_t, probs = c(.25, .5, .75), na.rm = TRUE),
+    linetype = "solid"
+  ) +
+  facet_wrap(~ country_code, scales = "free_y") +
+  labs(
+    title = "Distribution of research assets across African universities",
+    subtitle = "Academic asset: log(1 + publications)",
+    x = "Research stock: log(1 + publications)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+ggplot(df %>% filter(africa_dummy == 1),
+
+       aes(n_publications)) +
+
+  geom_density()
+
+df_plot_eu <- df %>%
+  filter(
+    eu_dummy == 1,
+    !is.na(research_t),
+    !is.na(country_code)
+  )
+
+ggplot(df_plot_eu, aes(x = research_t)) +
+  geom_density(linewidth = 1) +
+  geom_vline(
+    xintercept = quantile(df_plot$research_t, probs = c(.25, .5, .75), na.rm = TRUE),
+    linetype = "solid"
+  ) +
+  facet_wrap(~ country_code, scales = "free_y") +
+  labs(
+    title = "Distribution of research assets across European universities",
+    subtitle = "Academic asset: log(1 + publications)",
+    x = "Research stock: log(1 + publications)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+df <- df %>%
+  mutate(research_t5 = dplyr::lead(research_t, 5))
+
+df_africa <- df %>%
+
+  filter(africa_dummy == 1) %>%
+
+  arrange(inst_id, year) %>%
+
+  group_by(inst_id) %>%
+
+  mutate(
+
+    research_t  = log1p(n_publications),
+
+    research_t5 = dplyr::lead(research_t, 5)
+
+  ) %>%
+
+  ungroup() %>%
+
+  filter(
+
+    !is.na(research_t),
+
+    !is.na(research_t5)
+
+  )
+
+kernel_africa_t5 <- npreg(
+
+  research_t5 ~ research_t,
+
+  data = df_africa
+
+)
+
+grid_africa <- data.frame(
+
+  research_t = seq(
+
+    min(df_africa$research_t, na.rm = TRUE),
+
+    max(df_africa$research_t, na.rm = TRUE),
+
+    length.out = 300
+
+  )
+
+)
+
+grid_africa$research_t5_hat <- predict(
+
+  kernel_africa_t5,
+
+  newdata = grid_africa
+
+)
+
+ggplot(grid_africa, aes(x = research_t, y = research_t5_hat)) +
+
+  geom_line(linewidth = 1) +
+
+  geom_abline(
+
+    intercept = 0,
+
+    slope = 1,
+
+    linetype = "dashed"
+
+  ) +
+
+  labs(
+
+    x = "Research stock at t: log(1 + publications)",
+
+    y = "Research stock at t+6: log(1 + publications)",
+
+    title = "Kernel-estimated 6-year research transition function, Africa"
+
+  ) +
+
+  theme_minimal()
+
+
+
+df_south <- df %>%
+  filter(north_south == 0) %>%
+  arrange(inst_id, year) %>%
+  group_by(inst_id) %>%
+  mutate(
+    research_t  = log1p(n_publications),
+    research_t6 = dplyr::lead(research_t, 6)
+  ) %>%
+  ungroup() %>%
+  filter(
+    !is.na(research_t),
+    !is.na(research_t6)
+  )
+
+kernel_south_t6 <- npreg(
+  research_t6 ~ research_t,
+  data = df_south
+)
+
+grid_south <- data.frame(
+  research_t = seq(
+    min(df_south$research_t),
+    max(df_south$research_t),
+    length.out = 300
+  )
+)
+
+grid_south$research_t6_hat <- predict(
+  kernel_south_t6,
+  newdata = grid_south
+)
+
+ggplot(grid_south,
+       aes(research_t, research_t6_hat)) +
+  geom_line(linewidth = 1) +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "Research stock at t",
+    y = "Research stock at t+6",
+    title = "6-year research transition function, South"
+  ) +
+  theme_minimal()
+
+
+fe_model_poly <- feols(
+
+  research_t5 ~ research_t + I(research_t^2) + I(research_t^3) |
+
+    inst_id + year,
+
+  data = df,
+
+  cluster = ~inst_id
+
+)
+
+summary(fe_model_poly)
+
+grid <- data.frame(
+  research_t = seq(
+    min(df$research_t),
+    max(df$research_t),
+    length.out = 500
+  )
+)
+
+grid$pred <- predict(
+  fe_model_poly,
+  newdata = grid,
+  fixef = FALSE
+)
+
+ggplot(grid, aes(research_t, pred)) +
+  geom_line() +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed"
+  )
+
+
+grid <- data.frame(
+
+  research_t = seq(
+
+    min(df$research_t, na.rm = TRUE),
+
+    max(df$research_t, na.rm = TRUE),
+
+    length.out = 500
+
+  )
+
+)
+
+b <- coef(fe_model_poly)
+
+grid <- grid %>%
+
+  mutate(
+
+    pred =
+
+      b["research_t"] * research_t +
+
+      b["I(research_t^2)"] * research_t^2 +
+
+      b["I(research_t^3)"] * research_t^3
+
+  )
+
+ggplot(grid, aes(research_t, pred)) +
+
+  geom_line(linewidth = 1) +
+
+  geom_abline(
+
+    intercept = 0,
+
+    slope = 1,
+
+    linetype = "dashed"
+
+  ) +
+
+  theme_minimal()
