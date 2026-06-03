@@ -1,5 +1,7 @@
 library(httr)
 library(jsonlite)
+library(countrycode)
+library(WDI)
 
 # Fetch African universities from OpenAlex
 url <- "https://api.openalex.org/institutions"
@@ -91,6 +93,10 @@ for (u in remaining_names) {
   
   saveRDS(inst_ids, "inst_ids_africa_progress.rds")
 }
+
+df_africa <- read_csv('df_africa.csv') %>% select(name, year)
+
+inst_ids <- read_csv('instidafrica.csv')
 
 df_africa <- df_africa %>%
   left_join(inst_ids, by = "name")
@@ -208,6 +214,8 @@ df_africa <- df_africa %>%
     gdp_cap,
     by = c("country_code", "year")
   )
+
+write_csv(df_africa, 'df_africa.csv')
 
 fetch_pubs <- function(inst_id, year, retries = 3) {
   for (i in seq_len(retries)) {

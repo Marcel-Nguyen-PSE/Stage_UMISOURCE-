@@ -70,6 +70,8 @@ library(openalexR)
 library(purrr)
 library(np)
 library(furrr)
+library(countrycode)
+library(WDI)
 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
