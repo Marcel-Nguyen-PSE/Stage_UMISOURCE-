@@ -217,6 +217,10 @@ df_africa <- df_africa %>%
 
 write_csv(df_africa, 'df_africa.csv')
 
+
+df_africa <- read_csv('df_africa.csv')
+inst_ids <- read_csv('instidafrica.csv')
+
 fetch_pubs <- function(inst_id, year, retries = 3) {
   for (i in seq_len(retries)) {
     Sys.sleep(0.5)
