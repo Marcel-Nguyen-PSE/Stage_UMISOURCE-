@@ -42,6 +42,7 @@ cat("Tous les packages sont installés et chargés.\n")
 
 
 
+
 library(progressr)
 library(tidyverse)
 library(readxl)

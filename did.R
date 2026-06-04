@@ -259,3 +259,146 @@ for (i in seq_len(nrow(to_fetch))) {
 }
 
 write_csv(pubs, 'pubs_africa.csv')
+
+df_africa <- df_africa %>%
+  left_join(pubs, by = c('year', 'inst_id'))
+
+write_csv(df_africa, 'df_africa.csv')
+
+panel_kernel_africa <- df_africa %>%
+  arrange(inst_id, year) %>%
+  group_by(inst_id) %>%
+  mutate(
+    research_t  = log1p(n_publications),
+    research_t1 = dplyr::lead(log1p(n_publications)),
+    research_t6 = dplyr::lead(log1p(n_publications), 6)
+  ) %>%
+  ungroup() %>%
+  filter(
+    !is.na(research_t),
+    !is.na(research_t1),
+    !is.na(research_t6)
+  )
+
+kernel_model <- npreg(
+  research_t6 ~ research_t,
+  data = panel_kernel_africa
+)
+
+grid <- data.frame(
+  research_t = seq(
+    min(panel_kernel_africa$research_t),
+    max(panel_kernel_africa$research_t),
+    length.out = 300
+  )
+)
+
+grid$research_t1_hat <- predict(kernel_model, newdata = grid)
+
+ggplot(grid, aes(x = research_t, y = research_t1_hat)) +
+  geom_line(linewidth = 1) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "Research stock at t: log(1 + publications)",
+    y = "Research stock at t+1: log(1 + publications)",
+    title = "Kernel-estimated research transition function"
+  ) +
+  theme_minimal()
+
+df_africa <- df_africa %>%
+  rename(n_publication = 'n_publications')
+
+# Select year
+year_plot <- 2006
+
+# Aggregate publications by country
+pub_country <- df_africa %>%
+  filter(year == year_plot) %>%
+  group_by(country_code) %>%
+  summarise(publications = sum(n_publication, na.rm = TRUE))
+
+# African country boundaries
+africa_map <- rnaturalearth::ne_countries(
+  continent = "Africa",
+  returnclass = "sf"
+)
+
+# Merge map with publication data
+africa_map <- africa_map %>%
+  left_join(
+    pub_country,
+    by = c("iso_a3" = "country_code")
+  )
+
+# Plot
+pub_2006 <- ggplot(africa_map) +
+  geom_sf(aes(fill = publications), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    na.value = "grey90",
+    name = "Publications"
+  ) +
+  labs(
+    title = paste("Publications by Country in", year_plot)
+  ) +
+  theme_minimal()
+
+ggsave('pub_afr_2006.jpeg', pub_2006)
+
+# Aggregate publications by country
+pub_country_2025 <- df_africa %>%
+  filter(year == 2025) %>%
+  group_by(country_code) %>%
+  summarise(publications = sum(n_publication, na.rm = TRUE))
+
+# African country boundaries
+africa_map <- rnaturalearth::ne_countries(
+  continent = "Africa",
+  returnclass = "sf"
+)
+
+# Merge map with publication data
+africa_map_2025 <- africa_map %>%
+  left_join(
+    pub_country_2025,
+    by = c("iso_a3" = "country_code")
+  )
+
+# Plot
+pub_2025 <- ggplot(africa_map_2025) +
+  geom_sf(aes(fill = publications), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    na.value = "grey90",
+    name = "Publications"
+  ) +
+  labs(
+    title = paste("Publications by Country in", 2025)
+  ) +
+  theme_minimal()
+
+ggsave('pub_afr_2025.jpeg', pub_2025)
+
+country_year <- df_africa %>%
+  group_by(country_code, year) %>%
+  summarise(
+    total_publications = sum(n_publication, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+pub_year_afr <- ggplot(country_year,
+       aes(x = year,
+           y = total_publications,
+           color = country_code,
+           group = country_code)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  labs(
+    title = "Publications by Country Over Time",
+    x = "Year",
+    y = "Total Publications",
+    color = "Country"
+  ) +
+  theme_minimal()
+
+ggsave('pub_year_afr.jpeg', pub_year_afr, width = 16, height = 9)
