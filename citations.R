@@ -52,9 +52,6 @@ citations <- if (file.exists("citations_progress.rds")) {
   )
 }
 
-citations <- citations %>%
-  filter(!is.na(n_citations))
-
 to_fetch <- df %>%
   distinct(inst_id, year) %>%
   filter(!is.na(inst_id)) %>%
