@@ -402,3 +402,189 @@ pub_year_afr <- ggplot(country_year,
   theme_minimal()
 
 ggsave('pub_year_afr.jpeg', pub_year_afr, width = 16, height = 9)
+
+library(dplyr)
+
+# ACE 1 — treatment year: 2014
+ace1_universities <- c(
+  "Redeemer's University",
+  "University of Port Harcourt",
+  "Ahmadu Bello University",
+  "Obafemi Awolowo University",
+  "African University of Science and Technology",
+  "University of Jos",
+  "University of Benin",
+  "Federal University of Agriculture Abeokuta",
+  "Bayero University",
+  "Benue State University",
+  "University of Ghana",
+  "Kwame Nkrumah University of Science and Technology",
+  "Institut National Polytechnique Félix Houphouët-Boigny",
+  "Université Félix Houphouët-Boigny",
+  "École Nationale Supérieure de Statistique et d'Économie Appliquée",
+  "Université Gaston Berger",
+  "Université Cheikh Anta Diop",
+  "Université d'Abomey-Calavi",
+  "Institut International d'Ingénierie de l'Eau et de l'Environnement",
+  "Université de Yaoundé I",
+  "Université de Lomé",
+  "University of The Gambia"
+)
+
+# ACE 2 — treatment year: 2016
+ace2_universities <- c(
+  "Addis Ababa University",
+  "Haramaya University",
+  "Egerton University",
+  "Moi University",
+  "Jaramogi Oginga Odinga University of Science and Technology",
+  "Lilongwe University of Agriculture and Natural Resources",
+  "University of Malawi",
+  "Eduardo Mondlane University",
+  "University of Rwanda",
+  "Nelson Mandela African Institution of Science and Technology",
+  "Sokoine University of Agriculture",
+  "Makerere University",
+  "Mbarara University of Science and Technology",
+  "Uganda Martyrs University",
+  "Copperbelt University",
+  "University of Zambia"
+)
+
+df_africa <- df_africa %>%
+  mutate(
+    ace_1 = as.integer(name %in% ace1_universities & year >= 2014),
+    ace_2 = as.integer(name %in% ace2_universities & year >= 2016)
+  )
+
+el_acc <- WDI(
+  country = "all",
+  indicator = "EG.ELC.ACCS.ZS",
+  start = min(df_africa$year, na.rm = TRUE),
+  end = max(df_africa$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    el_acc = EG.ELC.ACCS.ZS
+  )
+
+df_africa <- df_africa %>%
+  left_join(
+    el_acc,
+    by = c("country_code", "year"))
+
+res_lev <- WDI(
+  country = "all",
+  indicator = "SP.POP.SCIE.RD.P6",
+  start = min(df_africa$year, na.rm = TRUE),
+  end = max(df_africa$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    res_lev = SP.POP.SCIE.RD.P6
+  )
+
+df_africa <- df_africa %>%
+  left_join(
+    res_lev,
+    by = c("country_code", "year"))
+
+did_main <- feols(
+  n_publication ~ ace_1 + ace_2 |
+    name + year + country_code[year],
+  cluster = ~ country_code,
+  data = df_africa
+)
+
+summary(did_main)
+
+es_ace1 <- feols(
+  n_publication ~ i(year, ace_1, ref = 2013) |
+    name + year + country_code[year],
+  cluster = ~country_code,
+  data = df_africa
+)
+
+iplot(es_ace1)
+
+es_ace2 <- feols(
+  n_publication ~ i(year, ace_2, ref = 2015) |
+    name + year + country_code[year],
+  cluster = ~country_code,
+  data = df_africa
+)
+
+iplot(es_ace2)
+
+df_africa <- df_africa |>
+  group_by(name) |>
+  arrange(year, .by_group = TRUE) |>
+  mutate(
+    cum_publications = cumsum(n_publication)
+  ) |>
+  ungroup()
+
+df_africa_pt <- df_africa |>
+  group_by(name) |>
+  arrange(year, .by_group = TRUE) |>
+  mutate(
+    log_stock = log1p(cum_publications),
+    stock_t5 = dplyr::lead(cum_publications, 5),
+    log_stock_t5 = log1p(stock_t5)
+  ) |>
+  ungroup() |>
+  filter(
+    !is.na(log_stock),
+    !is.na(log_stock_t5)
+  )
+
+m_stock <- feols(
+  log_stock_t5 ~ bs(log_stock, df = 4),
+  data = df_africa_pt
+)
+
+grid <- data.frame(
+  log_stock = seq(
+    min(df_africa_pt$log_stock),
+    max(df_africa_pt$log_stock),
+    length.out = 500
+  )
+)
+
+grid$pred <- predict(m_stock, newdata = grid)
+
+ggplot(grid, aes(log_stock, pred)) +
+  geom_line(size = 1) +
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    linetype = "dashed"
+  ) +
+  labs(
+    x = "Log cumulative publications",
+    y = "Expected log cumulative publications in t+5"
+  ) + theme_minimal()
+
+inflation <- WDI(
+  country = "all",
+  indicator = "FP.CPI.TOTL.ZG",
+  start = min(df_africa$year, na.rm = TRUE),
+  end = max(df_africa$year, na.rm = TRUE),
+  extra = TRUE
+) %>%
+  transmute(
+    country_code = iso3c,
+    year = as.numeric(year),
+    inflation = FP.CPI.TOTL.ZG
+  )
+
+df_africa <- df_africa %>%
+  left_join(
+    inflation,
+    by = c("country_code", "year")) 
+
+write_csv(df_africa, 'df_africa.csv')
