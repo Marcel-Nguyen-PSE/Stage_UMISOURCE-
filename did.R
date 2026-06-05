@@ -1040,3 +1040,145 @@ ggsave(
 df_panel <- read_csv('df_panel.csv') 
 
 nrow(df_panel %>% filter(country_code %in% african_codes) %>% distinct(name))
+
+fepois(
+  citations ~ publications +
+    ace1 + ace2 +
+    delta_1 + net_us +
+    gdp_cap |
+    name + year,
+  cluster = ~country_code,
+  data = df_africa
+)
+
+library(dplyr)
+library(FactoMineR)
+library(factoextra)
+
+# 1. Une ligne par université pour une année donnée
+df_acm <- df_africa |>
+  filter(year == 2025) |>
+  left_join(club_members, by = "name") |>
+  mutate(
+    ace1_cat = factor(ifelse(ace_1 == 1, "ACE1", "No ACE1")),
+    ace2_cat = factor(ifelse(ace_2 == 1, "ACE2", "No ACE2")),
+    pub_q = factor(ntile(n_publication, 4), labels = c("Pub Q1", "Pub Q2", "Pub Q3", "Pub Q4")),
+    cit_q = factor(ntile(n_citation, 4), labels = c("Cit Q1", "Cit Q2", "Cit Q3", "Cit Q4")),
+    gdp_q = factor(ntile(gdp_cap, 4), labels = c("GDP Q1", "GDP Q2", "GDP Q3", "GDP Q4")),
+    net_q = factor(ntile(net_us, 4), labels = c("Net Q1", "Net Q2", "Net Q3", "Net Q4")),
+    club = factor(club)
+  ) |>
+  select(
+    ace1_cat,
+    ace2_cat,
+    pub_q,
+    cit_q,
+    gdp_q,
+    net_q,
+    club
+  ) |>
+  na.omit()
+
+# 2. ACM
+# club est en 7e colonne, donc quali.sup = 7
+res_acm <- MCA(
+  df_acm,
+  quali.sup = 7,
+  graph = FALSE
+)
+
+# 3. Graphique des modalités actives + clubs supplémentaires
+p_acm <- fviz_mca_var(
+  res_acm,
+  repel = TRUE,
+  col.var = "cos2",
+  gradient.cols = c("grey70", "steelblue", "darkred")
+) +
+  labs(
+    title = "ACM des profils universitaires africains",
+    subtitle = "Clubs de convergence projetés comme variables supplémentaires"
+  ) +
+  theme_minimal()
+
+p_acm
+
+ggsave(
+  "acm_profils_universitaires.jpeg",
+  p_acm,
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+
+library(dplyr)
+library(ggplot2)
+library(np)
+
+# 1. Build 5-year transitions: t -> t+5
+trans_pub_5 <- df_africa |>
+  arrange(name, year) |>
+  group_by(name) |>
+  mutate(
+    p_t  = log1p(n_publication),
+    p_t5 = dplyr::lead(log1p(n_publication), 5),
+    year_t5 = dplyr::lead(year, 5)
+  ) |>
+  ungroup() |>
+  filter(
+    !is.na(p_t),
+    !is.na(p_t5),
+    year_t5 == year + 5
+  )
+
+# 2. Nonparametric local linear regression
+bw_5 <- npreg(
+  p_t5 ~ p_t,
+  data = trans_pub_5,
+  regtype = "ll"
+)
+
+fit_5 <- npreg(
+  bw_5,
+  newdata = data.frame(
+    p_t = seq(
+      min(trans_pub_5$p_t, na.rm = TRUE),
+      max(trans_pub_5$p_t, na.rm = TRUE),
+      length.out = 300
+    )
+  )
+)
+
+# 3. Extract fitted transition function
+transition_5_df <- data.frame(
+  p_t = fit_5$eval[, "p_t"],
+  p_t5_hat = fitted(fit_5)
+)
+
+# 4. Plot transition function with 45-degree line
+p_transition_5 <- ggplot() +
+  geom_point(
+    data = trans_pub_5,
+    aes(x = p_t, y = p_t5),
+    alpha = 0.04,
+    size = 0.6
+  ) +
+  geom_line(
+    data = transition_5_df,
+    aes(x = p_t, y = p_t5_hat),
+    linewidth = 1.2,
+    color = "red"
+  ) +
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Five-year publication transition function",
+    x = "log(1 + publications) at t",
+    y = "Expected log(1 + publications) at t + 5"
+  ) +
+  theme_minimal(base_size = 14)
+
+p_transition_5
+

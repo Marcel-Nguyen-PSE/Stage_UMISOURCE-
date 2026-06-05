@@ -138,6 +138,25 @@ tw_panel <- read_csv('Data/THE World University Rankings 2016-2026.csv') %>%
 tw_panel_2011 <- read_csv('Data/2011_2015_rankings.csv') %>%
   select(-rank_order, -...22, -subjects_offered, -closed, -aliases, -unaccredited, -scores_international_outlook_rank, -scores_research_rank, -scores_citations_rank, -scores_overall_rank, -scores_teaching_rank, -scores_industry_income_rank) 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 qs_panel_citations <- qs_panel %>%
   select(year, `Citations per Faculty`, university_name) %>%
   rename(name = 'university_name')
