@@ -379,6 +379,19 @@ pub_2025 <- ggplot(africa_map_2025) +
 
 ggsave('pub_afr_2025.jpeg', pub_2025)
 
+library(patchwork)
+
+combined_map <- pub_2006 + pub_2025 +
+  plot_layout(ncol = 2)
+
+ggsave(
+  filename = "publications_africa_2006_2025.jpeg",
+  plot = combined_map,
+  width = 14,
+  height = 7,
+  dpi = 300
+)
+
 country_year <- df_africa %>%
   group_by(country_code, year) %>%
   summarise(
@@ -509,6 +522,28 @@ es_ace1 <- feols(
   data = df_africa
 )
 
+library(ggfixest)
+
+library(ggfixest)
+library(patchwork)
+
+p1 <- ggiplot(es_ace1) +
+  ggtitle("ACE 1")
+
+p2 <- ggiplot(es_ace2) +
+  ggtitle("ACE 2")
+
+combined_did <- p1 + p2 +
+  plot_layout(ncol = 2)
+
+ggsave(
+  "event_studies_ace1_ace2.jpeg",
+  combined_did,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
 iplot(es_ace1)
 
 es_ace2 <- feols(
@@ -588,3 +623,420 @@ df_africa <- df_africa %>%
     by = c("country_code", "year")) 
 
 write_csv(df_africa, 'df_africa.csv')
+
+deltas_1 <- c(
+  # WACCBIP — University of Ghana, Legon
+  "University of Ghana",
+
+  # MARCAD — Université Cheikh Anta Diop, Dakar
+  "Université Cheikh Anta Diop",
+
+  # DELGEME — University of Science, Techniques and Technology of Bamako
+  "Université des Sciences des Techniques et des Technologies de Bamako",
+
+  # SANTHE — Africa Health Research Institute / University of KwaZulu-Natal
+  "University of KwaZulu-Natal",
+
+  # MUII-Plus — Makerere University / Uganda Virus Research Institute
+  "Makerere University",
+
+  # AMARI — University of Zimbabwe
+  "University of Zimbabwe",
+
+  # THRiVE-2 — Makerere University College of Health Sciences
+  # (same legal entity as Makerere University above — no duplicate needed)
+
+  # CARTA+ — African Population and Health Research Center (APHRC)
+  # APHRC is a research centre, not a university; match both common forms
+  "African Population and Health Research Center",
+  "African Population and Health Research Centre",
+
+  # IDeAL — KEMRI-Wellcome Trust Research Programme, Kilifi
+  "Kenya Medical Research Institute",
+  "KEMRI-Wellcome Trust Research Programme",
+
+  # Afrique One-ASPIRE — Centre Suisse de Recherches Scientifiques, Abidjan
+  "Centre Suisse de Recherches Scientifiques en Côte d'Ivoire",
+
+  # SSACAB — University of the Witwatersrand
+  "University of the Witwatersrand"
+)
+
+df_africa <- df_africa %>%
+  mutate(
+    deltas_1 = as.integer(name %in% deltas_1 & year >= 2015))
+
+did_deltas <- feols(
+  n_publication ~ deltas_1 |
+    name + year + country_code[year],
+  cluster = ~ country_code,
+  data = df_africa
+)
+
+summary(did_main)
+
+es_deltas1 <- feols(
+  n_publication ~ i(year, deltas_1, ref = 2013) |
+    name + year + country_code[year],
+  cluster = ~country_code,
+  data = df_africa
+)
+
+iplot(es_deltas1)
+########################################
+
+# 1. Build clean wide publication matrix
+pub_mat <- df_africa |>
+  group_by(name, year) |>
+  summarise(
+    n_publication = sum(n_publication, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    year = paste0("y", year)
+  ) |>
+  pivot_wider(
+    names_from = year,
+    values_from = n_publication,
+    values_fill = 0
+  ) |>
+  arrange(name)
+
+# 2. Force numeric year columns
+pub_mat <- pub_mat |>
+  mutate(
+    across(-name, as.numeric)
+  )
+
+# 3. Check structure
+str(pub_mat)
+sapply(pub_mat, class)
+
+# 4. Define data columns
+data_cols <- 2:ncol(pub_mat)
+
+# 5. Run log-t convergence test
+logt <- logtTest(
+  pub_mat,
+  dataCols = data_cols,
+  unit_names = 1
+)
+
+summary(logt)
+
+# 6. Identify convergence clubs
+clubs <- findClubs(
+  pub_mat,
+  dataCols = data_cols,
+  unit_names = 1
+)
+
+summary(clubs)
+
+# 7. Extract club membership
+club_members <- clubs$club.data
+
+club_members
+
+# 8. Plot clubs
+plot(clubs)
+
+
+pub_mat <- df_africa |>
+  group_by(name, year) |>
+  summarise(
+    n_publication = sum(n_publication, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    year = paste0("y", year)
+  ) |>
+  pivot_wider(
+    names_from = year,
+    values_from = n_publication,
+    values_fill = 0
+  ) |>
+  arrange(name) |>
+  mutate(
+    across(-name, as.numeric)
+  )
+
+pub_mat <- pub_mat |>
+  mutate(
+    across(-name, ~ log1p(.x))
+  )
+
+clubs <- findClubs(
+  pub_mat,
+  dataCols = 2:ncol(pub_mat),
+  unit_names = pub_mat$name,
+  refCol = ncol(pub_mat)
+)
+
+summary(clubs)
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ConvergenceClubs)
+
+# 1. Build wide data
+pub_mat <- df_africa |>
+  group_by(name, year) |>
+  summarise(
+    n_publication = sum(n_publication, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    year = paste0("y", year)
+  ) |>
+  pivot_wider(
+    names_from = year,
+    values_from = n_publication,
+    values_fill = 0
+  ) |>
+  arrange(name)
+
+# 2. Convert tibble to plain data.frame
+pub_mat <- as.data.frame(pub_mat)
+
+# 3. Force name column to character
+pub_mat$name <- as.character(pub_mat$name)
+
+# 4. Force all year columns to numeric
+year_cols <- grep("^y", names(pub_mat))
+
+pub_mat[year_cols] <- lapply(
+  pub_mat[year_cols],
+  function(x) as.numeric(as.character(x))
+)
+
+# 5. Optional but recommended: use log publications
+pub_mat[year_cols] <- lapply(
+  pub_mat[year_cols],
+  log1p
+)
+
+# 6. Check
+stopifnot(is.character(pub_mat$name))
+stopifnot(all(sapply(pub_mat[year_cols], is.numeric)))
+
+# 7. Run club convergence
+clubs <- findClubs(
+  pub_mat,
+  dataCols = year_cols,
+  unit_names = 1,
+  refCol = max(year_cols)
+)
+
+summary(clubs)
+plot(clubs)
+str(clubs)
+
+club_data <- attr(clubs, "data")
+data_cols <- attr(clubs, "dataCols")
+year_cols <- names(club_data)[data_cols]
+
+club_members <- bind_rows(
+  lapply(seq_along(clubs), function(i) {
+    data.frame(
+      name = clubs[[i]]$unit_names,
+      club = paste0("club", i)
+    )
+  })
+)
+
+pub_long <- club_data |>
+  select(name, all_of(year_cols)) |>
+  pivot_longer(
+    cols = all_of(year_cols),
+    names_to = "year",
+    values_to = "value"
+  ) |>
+  mutate(
+    time = as.integer(str_remove(year, "^y"))
+  )
+
+pub_long <- pub_long |>
+  group_by(time) |>
+  mutate(
+    h_it = value / mean(value, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+club_paths <- pub_long |>
+  inner_join(club_members, by = "name") |>
+  group_by(club, time) |>
+  summarise(
+    avg_transition_path = mean(h_it, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(club_paths, aes(
+  x = time,
+  y = avg_transition_path,
+  color = club,
+  shape = club,
+  linetype = club
+)) +
+  geom_hline(yintercept = 1, color = "black", linewidth = 0.4) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  labs(
+    title = "Average transition paths – All clubs",
+    x = "Time",
+    y = "Relative transition path",
+    color = NULL,
+    shape = NULL,
+    linetype = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "right"
+  )
+
+club_members <- bind_rows(
+  lapply(seq_along(clubs), function(i) {
+    data.frame(
+      name = clubs[[i]]$unit_names,
+      club = paste0("club", i)
+    )
+  })
+)
+
+df_africa |>
+  filter(year == 2025) |>
+  left_join(club_members, by = "name") |>
+  ggplot(aes(
+    x = log1p(n_publication),
+    fill = club,
+    colour = club
+  )) +
+  geom_density(alpha = 0.25) +
+  labs(
+    title = "Publication density by convergence club (2025)",
+    x = "log(1 + publications)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+df_africa |>
+  filter(year == 2006) |>
+  left_join(club_members, by = "name") |>
+  ggplot(aes(
+    x = log1p(n_publication),
+    fill = club,
+    colour = club
+  )) +
+  geom_density(alpha = 0.25) +
+  labs(
+    title = "Publication density by convergence club (2006)",
+    x = "log(1 + publications)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+library(patchwork)
+
+# Average transition path plot
+p_avg_path <- ggplot(club_paths, aes(
+  x = time,
+  y = avg_transition_path,
+  color = club,
+  shape = club,
+  linetype = club
+)) +
+  geom_hline(yintercept = 1, color = "black", linewidth = 0.4) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  labs(
+    title = "Average transition paths – All clubs",
+    x = "Time",
+    y = "Relative transition path",
+    color = NULL,
+    shape = NULL,
+    linetype = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom"
+  )
+
+# Density plot: 2006
+p_density_2006 <- df_africa |>
+  filter(year == 2006) |>
+  left_join(club_members, by = "name") |>
+  ggplot(aes(
+    x = log1p(n_publication),
+    fill = club,
+    colour = club
+  )) +
+  geom_density(alpha = 0.25) +
+  labs(
+    title = "Publication density by club (2006)",
+    x = "log(1 + publications)",
+    y = "Density",
+    fill = NULL,
+    colour = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom"
+  )
+
+# Density plot: 2025
+p_density_2025 <- df_africa |>
+  filter(year == 2025) |>
+  left_join(club_members, by = "name") |>
+  ggplot(aes(
+    x = log1p(n_publication),
+    fill = club,
+    colour = club
+  )) +
+  geom_density(alpha = 0.25) +
+  labs(
+    title = "Publication density by club (2025)",
+    x = "log(1 + publications)",
+    y = "Density",
+    fill = NULL,
+    colour = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom"
+  )
+
+# Combine: average path on top, densities below
+combined_plot <- p_avg_path / (p_density_2006 + p_density_2025) +
+  plot_layout(
+    heights = c(1.1, 1),
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "bottom"
+  )
+
+# Export single JPEG
+ggsave(
+  filename = "average_path_and_densities.jpeg",
+  plot = combined_plot,
+  width = 14,
+  height = 10,
+  dpi = 300
+)
+
+df_panel <- read_csv('df_panel.csv') 
+
+nrow(df_panel %>% filter(country_code %in% african_codes) %>% distinct(name))
