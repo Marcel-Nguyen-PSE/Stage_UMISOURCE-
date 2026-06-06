@@ -1,7 +1,3 @@
-df <- read_csv("df_panel.csv")
-
-plan(multisession, workers = 3)
-
 fetch_citations <- function(inst_id, year) {
   message("Fetching: ", inst_id, " | ", year)
 

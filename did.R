@@ -464,6 +464,8 @@ ace2_universities <- c(
   "University of Zambia"
 )
 
+iplot(sa_ace, xlim = c(-5, 5))
+
 df_africa <- df_africa %>%
   mutate(
     ace_1 = as.integer(name %in% ace1_universities & year >= 2014),
@@ -516,7 +518,7 @@ did_main <- feols(
 summary(did_main)
 
 es_ace1 <- feols(
-  n_publication ~ i(year, ace_1, ref = 2013) |
+  n_publication ~ i(year, ace_1, ref = 2014) |
     name + year + country_code[year],
   cluster = ~country_code,
   data = df_africa
