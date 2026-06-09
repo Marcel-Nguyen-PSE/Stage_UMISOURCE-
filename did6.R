@@ -1,4 +1,7 @@
 write_csv(df_africa, 'df_africa.csv')
+
+df_africa <- read_csv('df_africa.csv')
+
 df <- read_csv('df_africa.csv') %>%
   filter(year <= 2025)
 
@@ -13,6 +16,9 @@ did_ace1 <- feols(
   data    = df_ace1,
   cluster = ~openalex_id
 )
+
+
+
 
 # ── Spec 1 : ACE 2, control = ACE 1 universities ─────────────────────────────
 df_ace2 <- df |> filter(any_ace == 1)
@@ -32,6 +38,14 @@ df_match_base <- df |>
   select(openalex_id, treated, gdp_cap, internet,
          electricity, tertiary_enrol)
 
+df_match_base2 <- df |>
+  filter(year == 2016) |>
+  mutate(treated = as.integer(ace_2 == 1 & !is.na(ace_2))) |>
+  filter(!is.na(gdp_cap), !is.na(internet), !is.na(electricity),
+         !is.na(tertiary_enrol)) |>
+  select(openalex_id, treated, gdp_cap, internet,
+         electricity, tertiary_enrol)
+
 table(df_match_base$treated)  # should now have both 0s and 1s
 
 m_out <- matchit(
@@ -41,8 +55,20 @@ m_out <- matchit(
   ratio  = 2
 )
 
+m_out2 <- matchit(
+  treated ~ gdp_cap + internet + electricity + tertiary_enrol,
+  data   = df_match_base2,
+  method = "nearest",
+  ratio  = 2
+)
+
+
+
 matched_ids <- match.data(m_out)$openalex_id
 df_matched  <- df |> filter(openalex_id %in% matched_ids)
+
+matched_ids2 <- match.data(m_out2)$openalex_id
+df_matched2  <- df |> filter(openalex_id %in% matched_ids2)
 
 table(df_matched$ace_1)  # verify: should have both 0s and 1s
 
@@ -54,11 +80,30 @@ did_matched <- feols(
   cluster = ~openalex_id
 )
 
+did_matched2 <- feols(
+  n_publication ~ i(year, ace_2, ref = 2015) +
+    gdp_cap + internet + electricity + tertiary_enrol |
+    openalex_id + year,
+  data    = df_matched2,
+  cluster = ~openalex_id
+)
+
 # ── Results ───────────────────────────────────────────────────────────────────
 iplot(did_ace1,    main = "ACE 1 – control: ACE 2")
 iplot(did_ace2,    main = "ACE 2 – control: ACE 1")
-iplot(did_matched, main = "ACE 1 – matched controls")
 
+did_ace1_match <- ggiplot(did_matched, main = "ACE 1 – matched controls")
+did_ace2_match <- ggiplot(did_matched2, main = 'ACE 2 : matched controls')
+
+did_comb <- (did_ace1_match + did_ace2_match) + plot_annotation(title = 'DID Estimates for ACE 1 and ACE 2 using matched controls')
+ggsave(
+  filename = "parallel_trends_didcomb.jpeg",
+  plot     = did_comb,
+  width    = 13.33,   # 16:9 slide dimensions in inches
+  height   = 7.5,
+  dpi      = 300,
+  bg       = "white"
+)
 etable(did_ace1, did_ace2, did_matched)
 
 
