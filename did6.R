@@ -73,7 +73,7 @@ df_matched2  <- df |> filter(openalex_id %in% matched_ids2)
 table(df_matched$ace_1)  # verify: should have both 0s and 1s
 
 did_matched <- feols(
-  n_publication ~ i(year, ace_1, ref = 2013) +
+  n_publication ~ i(year, ace_1, ref = 2010) +
     gdp_cap + internet + electricity + tertiary_enrol |
     openalex_id + year,
   data    = df_matched,

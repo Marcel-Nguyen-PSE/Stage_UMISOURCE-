@@ -216,12 +216,17 @@ fetch_citations_chunked <- function(inst_id, year, retries = 5) {
 }
 
 # ── Resume from existing data ─────────────────────────────────────────────────
+
+citations_af <- read_csv('citations_final.csv')
+
 citations <- citations_af %>%
   filter(!is.na(n_citations))
 
 message(sprintf("Loaded %d existing observations", nrow(citations)))
 
 # ── Build fetch queue ─────────────────────────────────────────────────────────
+df_africa <- df_africa 
+
 to_fetch <- df_africa %>%
   distinct(inst_id, year) %>%
   filter(!is.na(inst_id)) %>%
@@ -260,9 +265,12 @@ with_progress({
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
-||||message("Done! ", nrow(citations), " rows fetched")
+message("Done! ", nrow(citations), " rows fetched")
 message("  Successful : ", sum(!is.na(citations$n_citations)))
 message("  Failed     : ", sum(is.na(citations$n_citations)))
 
 saveRDS(citations, "citations_final.rds")
-write_csv(citations, "citations_final.csv")
+write_csv(citations_progress, "citations_final.csv")
+
+
+df_africa <- read_csv('df_africa.csv')
