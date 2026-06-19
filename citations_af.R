@@ -219,7 +219,7 @@ fetch_citations_chunked <- function(inst_id, year, retries = 5) {
 
 citations_af <- read_csv('citations_final.csv')
 
-citations <- citations_af
+citations <- citations_progress
 
 message(sprintf("Loaded %d existing observations", nrow(citations)))
 
@@ -270,6 +270,6 @@ message("  Failed     : ", sum(is.na(citations$n_citations)))
 
 saveRDS(citations, "citations_final.rds")
 write_csv(citations_progress, "citations_final.csv")
-
+write_csv(citations, 'citations_af_v2.csv')
 
 df_africa <- read_csv('df_africa.csv')
