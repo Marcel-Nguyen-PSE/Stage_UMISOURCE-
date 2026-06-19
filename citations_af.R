@@ -219,13 +219,12 @@ fetch_citations_chunked <- function(inst_id, year, retries = 5) {
 
 citations_af <- read_csv('citations_final.csv')
 
-citations <- citations_af %>%
-  filter(!is.na(n_citations))
+citations <- citations_af
 
 message(sprintf("Loaded %d existing observations", nrow(citations)))
 
 # ── Build fetch queue ─────────────────────────────────────────────────────────
-df_africa <- df_africa 
+df_africa <- read_csv('df_africa.csv') %>% rename(inst_id = 'openalex_id')
 
 to_fetch <- df_africa %>%
   distinct(inst_id, year) %>%
