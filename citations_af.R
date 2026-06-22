@@ -273,3 +273,113 @@ write_csv(citations_progress, "citations_final.csv")
 write_csv(citations, 'citations_af_v2.csv')
 
 df_africa <- read_csv('df_africa.csv')
+
+
+df_africa <- df_africa %>% 
+  left_join(citations, by = c('inst_id', 'year'))
+
+write_csv(df_africa, 'df_africa.csv')
+
+nrow(df_africa %>% filter(!is.na(n_citations)))
+
+df_africa <- df_africa %>%
+  select(-cum_publications)
+names(df_africa)
+
+variable_dictionary <- tribble(
+
+  ~Variable, ~Definition,
+
+  "name", "Name of the institution",
+
+  "year", "Observation year",
+
+  "inst_id", "Unique institution identifier",
+
+  "country_code", "Country code of the institution",
+
+  "type", "Type or category of institution",
+
+  "n_publication", "Number of publications",
+
+  "ace_1", "Academic excellence/collaboration indicator 1",
+
+  "ace_2", "Academic excellence/collaboration indicator 2",
+
+  "deltas_1", "Change (delta) indicator 1",
+
+  "gdp_cap", "GDP per capita",
+
+  "gdp_growth", "Annual GDP growth rate",
+
+  "internet", "Internet penetration rate",
+
+  "electricity", "Access to electricity rate",
+
+  "tertiary_enrol", "Tertiary education enrollment rate",
+
+  "education_exp", "Education expenditure (% of GDP)",
+
+  "rd_exp", "Research and development expenditure (% of GDP)",
+
+  "researchers", "Number of researchers",
+
+  "n_citations", "Number of citations received"
+
+)
+library(typstable)
+tt_save(tt(variable_dictionary, rownames = FALSE), 'dict.typ')
+
+
+tt_save(tt(data.frame(
+
+  Variable = names(df_africa %>% select(-ace_1, -ace_2, deltas_1, -name, -year, -type)),
+
+  Type = sapply(df_africa %>% select(-ace_1, -ace_2, deltas_1, -name, -year, -type), class),
+
+  Missing = sapply(df_africa %>% select(-ace_1, -ace_2, deltas_1, -name, -year, -type), function(x) sum(is.na(x))),
+
+  Unique = sapply(df_africa %>% select(-ace_1, -ace_2, deltas_1, -name, -year, -type), n_distinct),
+  
+  Part_missing =  sapply(df_africa %>% select(-ace_1, -ace_2, deltas_1, -name, -year, -type), function(x) sum(is.na(x))) / nrow(df_africa %>% select(-ace_1, -ace_2, deltas_1, -name, -year, -type))
+
+), rownames = FALSE) %>% mutate(Part_missing = round(Part_missing, 3)), 'desc1.typ')
+
+
+library(dplyr)
+library(tinytable)
+
+vars <- df_africa %>%
+  select(-ace_1, -ace_2, -deltas_1, -name, -year, -type)
+
+desc1 <- data.frame(
+  Variable = names(vars),
+  Type = sapply(vars, function(x) paste(class(x), collapse = ", ")),
+  Missing = sapply(vars, function(x) sum(is.na(x))),
+  Unique = sapply(vars, n_distinct),
+  Part_missing = sapply(vars, function(x) sum(is.na(x))) / nrow(vars),
+  row.names = NULL
+) %>%
+  mutate(Part_missing = round(Part_missing, 3))
+
+tt_save(
+  tt(desc1, rownames = FALSE),
+  "desc1.typ"
+)
+
+
+library(FactoMineR)
+library(factoextra)
+library(dplyr)
+
+mca_data <- df_africa %>%
+  select(ace_1, ace_2, deltas_1) %>%
+  mutate(across(everything(), as.factor))
+
+res.mca <- MCA(mca_data, graph = FALSE)
+res.mca
+
+fviz_mca_var(
+  res.mca,
+  repel = TRUE
+)
