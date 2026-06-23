@@ -179,3 +179,17 @@ df_gap <- df_africa %>%
   mutate(
     gap = founded_date - first_pub_year
   )
+
+uni_miss_v2 <- uni_miss_v2 %>% rename(founded_date.x = 'founded_date')
+
+df_gap <- df_gap %>%
+  filter(gap > 0)
+
+uni_to_remove <- df_gap %>%
+  filter(gap > 5) %>%
+  pull(name)
+
+df_africa <- df_africa %>%
+  filter(!(name %in% uni_to_remove))
+
+df_africa %>% filter(is.na(inst_id)) %>% distinct(name) %>% pull(name)
