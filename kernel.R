@@ -1,311 +1,435 @@
 library(dplyr)
 library(ggplot2)
-library(np)
+library(patchwork)
+library(furrr)
+
+make_transition_ci_fast <- function(data, xvar, yvar, title, xlab, ylab,
+                                     B = 100, span = 0.45) {
+
+  df <- data %>%
+    filter(!is.na(.data[[xvar]]), !is.na(.data[[yvar]])) %>%
+    select(name, x = all_of(xvar), y = all_of(yvar))
+
+  grid <- data.frame(
+    x = seq(
+      quantile(df$x, 0.01, na.rm = TRUE),
+      quantile(df$x, 0.99, na.rm = TRUE),
+      length.out = 200
+    )
+  )
+
+  # base fit - default "interpolate" surface, much faster than "direct"
+  fit <- loess(y ~ x, data = df, span = span, degree = 1)
+  grid$fit <- predict(fit, newdata = grid)
+
+  ids      <- unique(df$name)
+  df_split <- split(df, df$name)  # precompute once, avoid repeated filtering
+
+  boot_list <- future_map(seq_len(B), function(i) {
+    boot_ids <- sample(ids, length(ids), replace = TRUE)
+    boot_df  <- bind_rows(df_split[boot_ids])
+
+    boot_fit <- tryCatch(
+      loess(y ~ x, data = boot_df, span = span, degree = 1),
+      error = function(e) NULL
+    )
+
+    if (is.null(boot_fit)) {
+      rep(NA_real_, nrow(grid))
+    } else {
+      predict(boot_fit, newdata = grid)
+    }
+  }, .options = furrr_options(seed = TRUE))
+
+  boot_mat <- do.call(cbind, boot_list)
+
+  grid$lower <- apply(boot_mat, 1, quantile, probs = 0.025, na.rm = TRUE)
+  grid$upper <- apply(boot_mat, 1, quantile, probs = 0.975, na.rm = TRUE)
+
+  ggplot(grid, aes(x = x, y = fit)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+    geom_line(linewidth = 1.1) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+    labs(title = title, x = xlab, y = ylab) +
+    theme_minimal(base_size = 12)
+}
+
+plan(multisession, workers = parallel::detectCores() - 1)
+
+set.seed(123)
+country_year_plots <- (
+  make_transition_ci_fast(
+    df_trans,
+    "rel_log_pub_t",
+    "rel_log_pub_t5",
+    "Publications",
+    "Position at t",
+    "Position at t + 5",
+    B = 500
+  ) |
+    make_transition_ci_fast(
+      df_trans,
+      "rel_log_cit_t",
+      "rel_log_cit_t5",
+      "Citations",
+      "Position at t",
+      "Position at t + 5",
+      B = 500
+    ) |
+    make_transition_ci_fast(
+      df_trans,
+      "rel_log_cpp_t",
+      "rel_log_cpp_t5",
+      "Citations/publication",
+      "Position at t",
+      "Position at t + 5",
+      B = 500
+    )
+) +
+  plot_annotation(
+    title = "Transition functions net of country-year mean"
+  )
+
+plan(sequential)  # reset after, optional
+
+ggsave('country_plots_transition.jpeg', country_year_plots, width = 13, height = 6)
+
+
+library(segmented)
+
+lm1 <- lm(rel_log_cpp_t5 ~ rel_log_cpp_t, data = df_trans)
+
+seg <- segmented(
+  lm1,
+  seg.Z = ~ rel_log_cpp_t,
+  psi = 0.5
+)
+
+summary(seg)
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# -----------------------------
+# 1. Parameters
+# -----------------------------
+
+threshold <- 1.28   # replace by your estimated threshold if needed
+
+base_year <- 2006
+
+# -----------------------------
+# 2. Prepare data
+# -----------------------------
+
+df_balboni <- df_africa %>%
+  mutate(
+    log_cpp = ifelse(
+      n_publication > 0,
+      log1p(n_citations / n_publication),
+      NA_real_
+    ),
+    university_age = year - founded_date
+  ) %>%
+  filter(
+    !is.na(log_cpp),
+    is.finite(log_cpp),
+    !is.na(university_age)
+  )
+
+# baseline position used to define above/below threshold
+baseline <- df_balboni %>%
+  filter(year == base_year) %>%
+  group_by(country_code) %>%
+  mutate(
+    rel_log_cpp_base = log_cpp - mean(log_cpp, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    threshold_group = ifelse(
+      rel_log_cpp_base < threshold,
+      "Below T",
+      "Above T"
+    ),
+    age_group = ifelse(
+      university_age < median(university_age, na.rm = TRUE),
+      "Young universities",
+      "Old universities"
+    )
+  ) %>%
+  dplyr::select(name, threshold_group, age_group)
+
+# merge baseline groups back into panel
+df_balboni <- df_balboni %>%
+  left_join(baseline, by = "name") %>%
+  filter(
+    !is.na(threshold_group),
+    !is.na(age_group)
+  )
+
+# -----------------------------
+# 3. Compute deciles by year/group
+# -----------------------------
+
+decile_data <- df_balboni %>%
+  group_by(age_group, threshold_group, year) %>%
+  summarise(
+    p10 = quantile(log_cpp, 0.10, na.rm = TRUE),
+    p20 = quantile(log_cpp, 0.20, na.rm = TRUE),
+    p30 = quantile(log_cpp, 0.30, na.rm = TRUE),
+    p40 = quantile(log_cpp, 0.40, na.rm = TRUE),
+    p50 = quantile(log_cpp, 0.50, na.rm = TRUE),
+    p60 = quantile(log_cpp, 0.60, na.rm = TRUE),
+    p70 = quantile(log_cpp, 0.70, na.rm = TRUE),
+    p80 = quantile(log_cpp, 0.80, na.rm = TRUE),
+    p90 = quantile(log_cpp, 0.90, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = starts_with("p"),
+    names_to = "percentile",
+    values_to = "value"
+  )
+
+# -----------------------------
+# 4. Plot Balboni-style figure
+# -----------------------------
+
+p_balboni <- ggplot(
+  decile_data,
+  aes(
+    x = year,
+    y = value,
+    group = percentile,
+    linetype = percentile
+  )
+) +
+  geom_line(linewidth = 0.7) +
+  geom_hline(
+    yintercept = threshold,
+    linewidth = 0.6
+  ) +
+  facet_grid(
+    age_group ~ threshold_group
+  ) +
+  labs(
+    title = "Citation-intensity dynamics above and below threshold",
+    x = "Year",
+    y = "log(1 + citations per publication)",
+    linetype = "Percentile"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+p_balboni
+
+ggsave(
+  "balboni_style_citation_intensity.jpeg",
+  p_balboni,
+  width = 11,
+  height = 9,
+  dpi = 300
+)
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
 library(patchwork)
 
 # --------------------------------------------------
-# 1. Build transition panel
-#    Raw variables + net-of-country-year variables
+# 1. Build cohort transition panel
 # --------------------------------------------------
 
-df_trans <- df_africa %>%
+df_cohort <- df_africa %>%
   mutate(
-    log_pub = log1p(n_publication),
-    log_cit = log1p(n_citations),
-    cit_per_pub = ifelse(
+    log_cpp = ifelse(
       n_publication > 0,
-      n_citations / n_publication,
+      log1p(n_citations / n_publication),
       NA_real_
-    ),
-    log_cpp = log1p(cit_per_pub)
+    )
+  ) %>%
+  filter(
+    !is.na(log_cpp),
+    is.finite(log_cpp),
+    !is.na(founded_date)
+  ) %>%
+  mutate(
+    cohort = case_when(
+      founded_date < 1960 ~ "Before 1960",
+      founded_date >= 1960 & founded_date < 1980 ~ "1960–1979",
+      founded_date >= 1980 & founded_date < 2000 ~ "1980–1999",
+      founded_date >= 2000 ~ "2000+",
+      TRUE ~ NA_character_
+    )
   ) %>%
   group_by(country_code, year) %>%
   mutate(
-    rel_log_pub = log_pub - mean(log_pub, na.rm = TRUE),
-    rel_log_cit = log_cit - mean(log_cit, na.rm = TRUE),
     rel_log_cpp = log_cpp - mean(log_cpp, na.rm = TRUE)
   ) %>%
   ungroup() %>%
   arrange(name, year) %>%
   group_by(name) %>%
   mutate(
-    log_pub_t = log_pub,
-    log_pub_t5 = dplyr::lead(log_pub, 5),
-    rel_log_pub_t = rel_log_pub,
-    rel_log_pub_t5 = dplyr::lead(rel_log_pub, 5),
-
-    log_cit_t = log_cit,
-    log_cit_t5 = dplyr::lead(log_cit, 5),
-    rel_log_cit_t = rel_log_cit,
-    rel_log_cit_t5 = dplyr::lead(rel_log_cit, 5),
-
-    log_cpp_t = log_cpp,
-    log_cpp_t5 = dplyr::lead(log_cpp, 5),
     rel_log_cpp_t = rel_log_cpp,
     rel_log_cpp_t5 = dplyr::lead(rel_log_cpp, 5),
-
     year_t5 = dplyr::lead(year, 5)
   ) %>%
   ungroup() %>%
-  filter(year_t5 == year + 5)
-
-# --------------------------------------------------
-# 2. Helper: transition function
-# --------------------------------------------------
-
-make_transition <- function(data, xvar, yvar, title, xlab, ylab) {
-
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-
-  m <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
+  filter(
+    year_t5 == year + 5,
+    !is.na(rel_log_cpp_t),
+    !is.na(rel_log_cpp_t5),
+    !is.na(cohort)
   )
 
-  grid <- data.frame(
-    x = seq(
-      min(df[[xvar]], na.rm = TRUE),
-      max(df[[xvar]], na.rm = TRUE),
-      length.out = 300
-    )
-  )
+# --------------------------------------------------
+# 2. Fast LOESS transition function by cohort
+# --------------------------------------------------
 
-  names(grid) <- xvar
-
-  grid$y_hat <- predict(m, newdata = grid)
-
-  ggplot(grid, aes(x = .data[[xvar]], y = y_hat)) +
+make_cohort_transition <- function(data, span = 0.45) {
+  
+  grid_data <- data %>%
+    group_by(cohort) %>%
+    group_modify(~ {
+      
+      df <- .x
+      
+      grid <- data.frame(
+        rel_log_cpp_t = seq(
+          quantile(df$rel_log_cpp_t, 0.01, na.rm = TRUE),
+          quantile(df$rel_log_cpp_t, 0.99, na.rm = TRUE),
+          length.out = 200
+        )
+      )
+      
+      fit <- loess(
+        rel_log_cpp_t5 ~ rel_log_cpp_t,
+        data = df,
+        span = span,
+        degree = 1,
+        control = loess.control(surface = "direct")
+      )
+      
+      grid$fit <- predict(fit, newdata = grid)
+      grid
+    }) %>%
+    ungroup()
+  
+  ggplot(
+    grid_data,
+    aes(x = rel_log_cpp_t, y = fit)
+  ) +
     geom_line(linewidth = 1.1) +
     geom_abline(
       intercept = 0,
       slope = 1,
       linetype = "dashed"
     ) +
+    facet_wrap(~ cohort, ncol = 2) +
     labs(
-      title = title,
-      x = xlab,
-      y = ylab
+      title = "Citation-intensity transition functions by founding cohort",
+      x = "Position at t within country-year",
+      y = "Expected position at t + 5 within country-year"
     ) +
-    theme_minimal(base_size = 12)
+    theme_minimal(base_size = 13)
 }
 
+p_cohort_transition <- make_cohort_transition(df_cohort)
+
+p_cohort_transition
+
+ggsave(
+  "cohort_transition_citation_intensity.jpeg",
+  p_cohort_transition,
+  width = 11,
+  height = 8,
+  dpi = 300
+)
+
 # --------------------------------------------------
-# 3. Helper: mobility function
+# 3. Mobility functions by cohort
 # --------------------------------------------------
 
-make_growth <- function(data, xvar, yvar, title, xlab, ylab) {
-
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-
-  m <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
+df_cohort <- df_cohort %>%
+  mutate(
+    d_rel_log_cpp = rel_log_cpp_t5 - rel_log_cpp_t
   )
 
-  grid <- data.frame(
-    x = seq(
-      min(df[[xvar]], na.rm = TRUE),
-      max(df[[xvar]], na.rm = TRUE),
-      length.out = 300
-    )
-  )
-
-  names(grid) <- xvar
-
-  grid$y_hat <- predict(m, newdata = grid)
-
-  ggplot(grid, aes(x = .data[[xvar]], y = y_hat)) +
+make_cohort_mobility <- function(data, span = 0.45) {
+  
+  grid_data <- data %>%
+    group_by(cohort) %>%
+    group_modify(~ {
+      
+      df <- .x
+      
+      grid <- data.frame(
+        rel_log_cpp_t = seq(
+          quantile(df$rel_log_cpp_t, 0.01, na.rm = TRUE),
+          quantile(df$rel_log_cpp_t, 0.99, na.rm = TRUE),
+          length.out = 200
+        )
+      )
+      
+      fit <- loess(
+        d_rel_log_cpp ~ rel_log_cpp_t,
+        data = df,
+        span = span,
+        degree = 1,
+        control = loess.control(surface = "direct")
+      )
+      
+      grid$fit <- predict(fit, newdata = grid)
+      grid
+    }) %>%
+    ungroup()
+  
+  ggplot(
+    grid_data,
+    aes(x = rel_log_cpp_t, y = fit)
+  ) +
     geom_hline(
       yintercept = 0,
       linetype = "dashed"
     ) +
     geom_line(linewidth = 1.1) +
+    facet_wrap(~ cohort, ncol = 2) +
     labs(
-      title = title,
-      x = xlab,
-      y = ylab
+      title = "Citation-intensity mobility functions by founding cohort",
+      x = "Position at t within country-year",
+      y = "Change in position, t to t + 5"
     ) +
-    theme_minimal(base_size = 12)
+    theme_minimal(base_size = 13)
 }
 
-# --------------------------------------------------
-# 4. Raw transition functions
-# --------------------------------------------------
+p_cohort_mobility <- make_cohort_mobility(df_cohort)
 
-raw_plots <- (
-  make_transition(
-    df_trans,
-    "log_pub_t",
-    "log_pub_t5",
-    "Publications",
-    "log(1 + publications) at t",
-    "log(1 + publications) at t + 5"
-  ) /
-  make_transition(
-    df_trans,
-    "log_cit_t",
-    "log_cit_t5",
-    "Citations",
-    "log(1 + citations) at t",
-    "log(1 + citations) at t + 5"
-  ) /
-  make_transition(
-    df_trans,
-    "log_cpp_t",
-    "log_cpp_t5",
-    "Citations per publication",
-    "log(1 + citations/publication) at t",
-    "log(1 + citations/publication) at t + 5"
-  )
-) +
-  plot_annotation(title = "Raw transition functions")
-
-raw_plots
+p_cohort_mobility
 
 ggsave(
-  "transition_functions_raw.jpeg",
-  raw_plots,
-  width = 9,
-  height = 13,
+  "cohort_mobility_citation_intensity.jpeg",
+  p_cohort_mobility,
+  width = 11,
+  height = 8,
   dpi = 300
 )
 
 # --------------------------------------------------
-# 5. Net-of-country-year transition functions
+# 4. Optional: sample size by cohort
 # --------------------------------------------------
 
-country_year_plots <- (
-  make_transition(
-    df_trans,
-    "rel_log_pub_t",
-    "rel_log_pub_t5",
-    "Publications, net of country-year mean",
-    "Position at t within country-year",
-    "Position at t + 5 within country-year"
-  ) |
-  make_transition(
-    df_trans,
-    "rel_log_cit_t",
-    "rel_log_cit_t5",
-    "Citations, net of country-year mean",
-    "Position at t within country-year",
-    "Position at t + 5 within country-year"
-  ) |
-  make_transition(
-    df_trans,
-    "rel_log_cpp_t",
-    "rel_log_cpp_t5",
-    "Citations/publication, net of country-year mean",
-    "Position at t within country-year",
-    "Position at t + 5 within country-year"
-  )
-) +
-  plot_annotation(title = "Transition functions net of country-year mean")
-
-country_year_plots
-
-ggsave(
-  "transition_functions_net_country_year.jpeg",
-  country_year_plots,
-  width = 9,
-  height = 13,
-  dpi = 300
-)
-
-# --------------------------------------------------
-# 6. Mobility functions
-# --------------------------------------------------
-
-df_trans <- df_trans %>%
-  mutate(
-    d_rel_log_pub = rel_log_pub_t5 - rel_log_pub_t,
-    d_rel_log_cit = rel_log_cit_t5 - rel_log_cit_t,
-    d_rel_log_cpp = rel_log_cpp_t5 - rel_log_cpp_t
-  )
-
-mobility_plots <- (
-  make_growth(
-    df_trans,
-    "rel_log_pub_t",
-    "d_rel_log_pub",
-    "Publication mobility",
-    "Publication position at t within country-year",
-    "Change in within-country position, t to t + 5"
-  ) /
-  make_growth(
-    df_trans,
-    "rel_log_cit_t",
-    "d_rel_log_cit",
-    "Citation mobility",
-    "Citation position at t within country-year",
-    "Change in within-country position, t to t + 5"
-  ) /
-  make_growth(
-    df_trans,
-    "rel_log_cpp_t",
-    "d_rel_log_cpp",
-    "Citation-intensity mobility",
-    "Citation-intensity position at t within country-year",
-    "Change in within-country position, t to t + 5"
-  )
-) +
-  plot_annotation(title = "Five-year mobility functions net of country-year mean")
-
-mobility_plots
-
-ggsave(
-  "mobility_functions_net_country_year.jpeg",
-  mobility_plots,
-  width = 9,
-  height = 13,
-  dpi = 300
-)
-
-p_pub <- make_transition(
-  df_trans,
-  "rel_log_pub_t",
-  "rel_log_pub_t5",
-  "Publications",
-  "Position at t within country-year",
-  "Position at t+5 within country-year"
-)
-
-p_cit <- make_transition(
-  df_trans,
-  "rel_log_cit_t",
-  "rel_log_cit_t5",
-  "Citations",
-  "Position at t within country-year",
-  "Position at t+5 within country-year"
-)
-
-p_cpp <- make_transition(
-  df_trans,
-  "rel_log_cpp_t",
-  "rel_log_cpp_t5",
-  "Citations per publication",
-  "Position at t within country-year",
-  "Position at t+5 within country-year"
-)
-
-ggplot(df_africa, aes(x = n_publication)) +
-  geom_histogram(bins = 100) +
-  theme_minimal()
-
-
-
-
-
+df_cohort %>%
+  count(cohort)
 
 
 
@@ -313,628 +437,367 @@ ggplot(df_africa, aes(x = n_publication)) +
 
 
 library(dplyr)
+library(tidyr)
 library(ggplot2)
-library(np)
-library(patchwork)
 
-# --------------------------------------------------
-# 1. Build robust rank-based panel
-# --------------------------------------------------
+# ==================================================
+# Balboni-style specification:
+# distance to national citation-intensity frontier
+# ==================================================
 
-df_rank <- df_africa %>%
+# 1. Parameters
+base_year <- 2006
+end_year  <- 2020          # avoids truncated citation window after 2020
+frontier_p <- 0.90         # national frontier = p90 within country-year
+age_cut <- NULL            # if NULL, median founding year is used
+
+# Use your estimated threshold if available
+threshold <- 1.28
+
+# 2. Build variable
+df_balb <- df_africa %>%
   mutate(
-    log_pub = log1p(n_publication),
-    log_cit = log1p(n_citations),
-    cit_per_pub = ifelse(
+    cpp = ifelse(
       n_publication > 0,
       n_citations / n_publication,
       NA_real_
     ),
-    log_cpp = log1p(cit_per_pub)
+    log_cpp = log1p(cpp)
   ) %>%
-  group_by(country_code, year) %>%
-  mutate(
-    r_pub = percent_rank(log_pub),
-    r_cit = percent_rank(log_cit),
-    r_cpp = percent_rank(log_cpp)
-  ) %>%
-  ungroup()
-
-# --------------------------------------------------
-# 2. Keep institutions observed at t and t+5
-# --------------------------------------------------
-
-df_trans_rank <- df_rank %>%
-  arrange(name, year) %>%
-  group_by(name) %>%
-  mutate(
-    r_pub_t = r_pub,
-    r_pub_t5 = dplyr::lead(r_pub, 5),
-
-    r_cit_t = r_cit,
-    r_cit_t5 = dplyr::lead(r_cit, 5),
-
-    r_cpp_t = r_cpp,
-    r_cpp_t5 = dplyr::lead(r_cpp, 5),
-
-    year_t5 = dplyr::lead(year, 5)
-  ) %>%
-  ungroup() %>%
-  filter(year_t5 == year + 5)
-
-# --------------------------------------------------
-# 3. Helper: rank transition
-# --------------------------------------------------
-
-make_rank_transition <- function(data, xvar, yvar, title) {
-
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-
-  m <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
+  filter(
+    year >= base_year,
+    year <= end_year,
+    !is.na(log_cpp),
+    is.finite(log_cpp),
+    !is.na(founded_date),
+    !is.na(country_code),
+    !is.na(name)
   )
 
-  grid <- data.frame(
-    x = seq(0, 1, length.out = 300)
-  )
-
-  names(grid) <- xvar
-
-  grid$y_hat <- predict(m, newdata = grid)
-
-  ggplot(grid, aes(x = .data[[xvar]], y = y_hat)) +
-    geom_line(linewidth = 1.1) +
-    geom_abline(
-      intercept = 0,
-      slope = 1,
-      linetype = "dashed"
-    ) +
-    coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-    labs(
-      title = title,
-      x = "Percentile within country-year at t",
-      y = "Expected percentile within country-year at t + 5"
-    ) +
-    theme_minimal(base_size = 13)
-}
-
-# --------------------------------------------------
-# 4. Transition plots
-# --------------------------------------------------
-
-p_rank_pub <- make_rank_transition(
-  df_trans_rank,
-  "r_pub_t",
-  "r_pub_t5",
-  "Publication-rank transition"
-)
-
-p_rank_cit <- make_rank_transition(
-  df_trans_rank,
-  "r_cit_t",
-  "r_cit_t5",
-  "Citation-rank transition"
-)
-
-p_rank_cpp <- make_rank_transition(
-  df_trans_rank,
-  "r_cpp_t",
-  "r_cpp_t5",
-  "Citation-intensity-rank transition"
-)
-
-p_rank_pub
-p_rank_cit
-p_rank_cpp
-
-ggsave("rank_transition_publications.jpeg", p_rank_pub, width = 8, height = 6, dpi = 300)
-ggsave("rank_transition_citations.jpeg", p_rank_cit, width = 8, height = 6, dpi = 300)
-ggsave("rank_transition_citation_intensity.jpeg", p_rank_cpp, width = 8, height = 6, dpi = 300)
-
-# --------------------------------------------------
-# 5. Mobility functions
-# --------------------------------------------------
-
-df_trans_rank <- df_trans_rank %>%
-  mutate(
-    d_r_pub = r_pub_t5 - r_pub_t,
-    d_r_cit = r_cit_t5 - r_cit_t,
-    d_r_cpp = r_cpp_t5 - r_cpp_t
-  )
-
-make_rank_mobility <- function(data, xvar, yvar, title) {
-
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-
-  m <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
-  )
-
-  grid <- data.frame(
-    x = seq(0, 1, length.out = 300)
-  )
-
-  names(grid) <- xvar
-
-  grid$y_hat <- predict(m, newdata = grid)
-
-  ggplot(grid, aes(x = .data[[xvar]], y = y_hat)) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    geom_line(linewidth = 1.1) +
-    labs(
-      title = title,
-      x = "Percentile within country-year at t",
-      y = "Change in percentile, t to t + 5"
-    ) +
-    theme_minimal(base_size = 13)
-}
-
-p_mob_pub <- make_rank_mobility(
-  df_trans_rank,
-  "r_pub_t",
-  "d_r_pub",
-  "Publication-rank mobility"
-)
-
-p_mob_cit <- make_rank_mobility(
-  df_trans_rank,
-  "r_cit_t",
-  "d_r_cit",
-  "Citation-rank mobility"
-)
-
-p_mob_cpp <- make_rank_mobility(
-  df_trans_rank,
-  "r_cpp_t",
-  "d_r_cpp",
-  "Citation-intensity-rank mobility"
-)
-
-p_mob_pub
-p_mob_cit
-p_mob_cpp
-
-ggsave("rank_mobility_publications.jpeg", p_mob_pub, width = 8, height = 6, dpi = 300)
-ggsave("rank_mobility_citations.jpeg", p_mob_cit, width = 8, height = 6, dpi = 300)
-ggsave("rank_mobility_citation_intensity.jpeg", p_mob_cpp, width = 8, height = 6, dpi = 300)
-
-
-
-df_africa %>%
-  distinct(country_code, name) %>%
-  count(country_code) %>%
-  summary()
-
-
-
-
-library(dplyr)
-library(ggplot2)
-library(np)
-library(patchwork)
-library(purrr)
-
-# --------------------------------------------------
-# 1. Build z-score transition panel
-# --------------------------------------------------
-
-df_trans_z <- df_africa %>%
-  mutate(
-    log_pub = log1p(n_publication),
-    log_cit = log1p(n_citations),
-    cit_per_pub = ifelse(
-      n_publication > 0,
-      n_citations / n_publication,
-      NA_real_
-    ),
-    log_cpp = log1p(cit_per_pub)
-  ) %>%
+# 3. Compute national frontier and distance to frontier
+df_balb <- df_balb %>%
   group_by(country_code, year) %>%
   mutate(
     n_country_year = n(),
-    
-    z_pub = ifelse(
-      sd(log_pub, na.rm = TRUE) > 0,
-      (log_pub - mean(log_pub, na.rm = TRUE)) / sd(log_pub, na.rm = TRUE),
-      NA_real_
+    frontier_cpp = quantile(
+      log_cpp,
+      probs = frontier_p,
+      na.rm = TRUE
     ),
-    
-    z_cit = ifelse(
-      sd(log_cit, na.rm = TRUE) > 0,
-      (log_cit - mean(log_cit, na.rm = TRUE)) / sd(log_cit, na.rm = TRUE),
-      NA_real_
-    ),
-    
-    z_cpp = ifelse(
-      sd(log_cpp, na.rm = TRUE) > 0,
-      (log_cpp - mean(log_cpp, na.rm = TRUE)) / sd(log_cpp, na.rm = TRUE),
-      NA_real_
-    )
+    dist_frontier = frontier_cpp - log_cpp
   ) %>%
   ungroup() %>%
   filter(
     n_country_year >= 5
-  ) %>%
-  arrange(name, year) %>%
-  group_by(name) %>%
+  )
+
+# 4. Define baseline threshold status and founding cohort
+baseline_groups <- df_balb %>%
+  filter(year == base_year) %>%
+  group_by(country_code) %>%
   mutate(
-    z_pub_t  = z_pub,
-    z_pub_t5 = dplyr::lead(z_pub, 5),
-    
-    z_cit_t  = z_cit,
-    z_cit_t5 = dplyr::lead(z_cit, 5),
-    
-    z_cpp_t  = z_cpp,
-    z_cpp_t5 = dplyr::lead(z_cpp, 5),
-    
-    year_t5 = dplyr::lead(year, 5)
+    rel_log_cpp_base =
+      log_cpp - mean(log_cpp, na.rm = TRUE)
   ) %>%
   ungroup() %>%
+  mutate(
+    threshold_group = ifelse(
+      rel_log_cpp_base >= threshold,
+      "Above T",
+      "Below T"
+    )
+  ) %>%
+  dplyr::select(
+    name,
+    threshold_group
+  )
+
+if (is.null(age_cut)) {
+  age_cut <- median(df_balb$founded_date, na.rm = TRUE)
+}
+
+cohort_groups <- df_balb %>%
+  distinct(name, founded_date) %>%
+  mutate(
+    cohort_group = ifelse(
+      founded_date <= age_cut,
+      "Old universities",
+      "Young universities"
+    )
+  ) %>%
+  dplyr::select(
+    name,
+    cohort_group
+  )
+
+df_balb <- df_balb %>%
+  left_join(baseline_groups, by = "name") %>%
+  left_join(cohort_groups, by = "name") %>%
   filter(
-    year_t5 == year + 5
+    !is.na(threshold_group),
+    !is.na(cohort_group)
+  )
+
+# 5. Compute decile trajectories
+decile_data <- df_balb %>%
+  group_by(
+    cohort_group,
+    threshold_group,
+    year
+  ) %>%
+  summarise(
+    p10 = quantile(dist_frontier, 0.10, na.rm = TRUE),
+    p20 = quantile(dist_frontier, 0.20, na.rm = TRUE),
+    p30 = quantile(dist_frontier, 0.30, na.rm = TRUE),
+    p40 = quantile(dist_frontier, 0.40, na.rm = TRUE),
+    p50 = quantile(dist_frontier, 0.50, na.rm = TRUE),
+    p60 = quantile(dist_frontier, 0.60, na.rm = TRUE),
+    p70 = quantile(dist_frontier, 0.70, na.rm = TRUE),
+    p80 = quantile(dist_frontier, 0.80, na.rm = TRUE),
+    p90 = quantile(dist_frontier, 0.90, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = starts_with("p"),
+    names_to = "percentile",
+    values_to = "value"
   ) %>%
   mutate(
-    d_z_pub = z_pub_t5 - z_pub_t,
-    d_z_cit = z_cit_t5 - z_cit_t,
-    d_z_cpp = z_cpp_t5 - z_cpp_t
-  )
-
-# --------------------------------------------------
-# 2. Helper: transition function
-# --------------------------------------------------
-
-make_transition <- function(data, xvar, yvar, title, xlab, ylab) {
-  
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-  
-  m <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
-  )
-  
-  grid <- data.frame(
-    x = seq(
-      quantile(df[[xvar]], 0.01, na.rm = TRUE),
-      quantile(df[[xvar]], 0.99, na.rm = TRUE),
-      length.out = 300
+    percentile = factor(
+      percentile,
+      levels = paste0("p", seq(10, 90, 10))
+    ),
+    threshold_group = factor(
+      threshold_group,
+      levels = c("Below T", "Above T")
+    ),
+    cohort_group = factor(
+      cohort_group,
+      levels = c("Young universities", "Old universities")
     )
   )
-  
-  names(grid) <- xvar
-  
-  grid$y_hat <- predict(
-    m,
-    newdata = grid
-  )
-  
-  ggplot(grid, aes(x = .data[[xvar]], y = y_hat)) +
-    geom_line(linewidth = 1.1) +
-    geom_abline(
-      intercept = 0,
-      slope = 1,
-      linetype = "dashed"
-    ) +
-    labs(
-      title = title,
-      x = xlab,
-      y = ylab
-    ) +
-    theme_minimal(base_size = 13)
-}
 
-# --------------------------------------------------
-# 3. Helper: mobility function
-# --------------------------------------------------
-
-make_mobility <- function(data, xvar, yvar, title, xlab, ylab) {
-  
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-  
-  m <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
-  )
-  
-  grid <- data.frame(
-    x = seq(
-      quantile(df[[xvar]], 0.01, na.rm = TRUE),
-      quantile(df[[xvar]], 0.99, na.rm = TRUE),
-      length.out = 300
-    )
-  )
-  
-  names(grid) <- xvar
-  
-  grid$y_hat <- predict(
-    m,
-    newdata = grid
-  )
-  
-  ggplot(grid, aes(x = .data[[xvar]], y = y_hat)) +
-    geom_hline(
-      yintercept = 0,
-      linetype = "dashed"
-    ) +
-    geom_line(linewidth = 1.1) +
-    labs(
-      title = title,
-      x = xlab,
-      y = ylab
-    ) +
-    theme_minimal(base_size = 13)
-}
-
-# --------------------------------------------------
-# 4. Transition plots
-# --------------------------------------------------
-
-p_z_pub <- make_transition(
-  df_trans_z,
-  "z_pub_t",
-  "z_pub_t5",
-  "Publication transition",
-  "Publication position at t within country-year",
-  "Expected publication position at t + 5"
-)
-
-p_z_cit <- make_transition(
-  df_trans_z,
-  "z_cit_t",
-  "z_cit_t5",
-  "Citation transition",
-  "Citation position at t within country-year",
-  "Expected citation position at t + 5"
-)
-
-p_z_cpp <- make_transition(
-  df_trans_z,
-  "z_cpp_t",
-  "z_cpp_t5",
-  "Citation-intensity transition",
-  "Citation-intensity position at t within country-year",
-  "Expected citation-intensity position at t + 5"
-)
-
-p_z_pub
-p_z_cit
-p_z_cpp
-
-ggsave("z_transition_publications.jpeg", p_z_pub, width = 8, height = 6, dpi = 300)
-ggsave("z_transition_citations.jpeg", p_z_cit, width = 8, height = 6, dpi = 300)
-ggsave("z_transition_citation_intensity.jpeg", p_z_cpp, width = 8, height = 6, dpi = 300)
-
-# --------------------------------------------------
-# 5. Mobility plots
-# --------------------------------------------------
-
-p_mob_pub <- make_mobility(
-  df_trans_z,
-  "z_pub_t",
-  "d_z_pub",
-  "Publication mobility",
-  "Publication position at t within country-year",
-  "Change in publication position, t to t + 5"
-)
-
-p_mob_cit <- make_mobility(
-  df_trans_z,
-  "z_cit_t",
-  "d_z_cit",
-  "Citation mobility",
-  "Citation position at t within country-year",
-  "Change in citation position, t to t + 5"
-)
-
-p_mob_cpp <- make_mobility(
-  df_trans_z,
-  "z_cpp_t",
-  "d_z_cpp",
-  "Citation-intensity mobility",
-  "Citation-intensity position at t within country-year",
-  "Change in citation-intensity position, t to t + 5"
-)
-
-p_mob_pub
-p_mob_cit
-p_mob_cpp
-
-ggsave("z_mobility_publications.jpeg", p_mob_pub, width = 8, height = 6, dpi = 300)
-ggsave("z_mobility_citations.jpeg", p_mob_cit, width = 8, height = 6, dpi = 300)
-ggsave("z_mobility_citation_intensity.jpeg", p_mob_cpp, width = 8, height = 6, dpi = 300)
-
-# --------------------------------------------------
-# 6. Combined figures
-# --------------------------------------------------
-
-transition_plots <- p_z_pub / p_z_cit / p_z_cpp +
-  plot_annotation(
-    title = "Five-year transition functions, z-scores within country-year"
-  )
-
-mobility_plots <- p_mob_pub / p_mob_cit / p_mob_cpp +
-  plot_annotation(
-    title = "Five-year mobility functions, z-scores within country-year"
-  )
-
-transition_plots
-mobility_plots
-
-ggsave("z_transition_all.jpeg", transition_plots, width = 9, height = 13, dpi = 300)
-ggsave("z_mobility_all.jpeg", mobility_plots, width = 9, height = 13, dpi = 300)
-
-
-
-
-
-
-
-
-
-country_year_plots +
-  plot_layout(guides = "collect") &
-  theme(
-    plot.title = element_text(size = 16),
-    axis.title = element_text(size = 11),
-    axis.text = element_text(size = 9)
-  )
-
-ggsave(
-  "transition_functions_net_country_year.jpeg",
-  country_year_plots,
-  width = 18,
-  height = 6,
-  dpi = 300
-)
-
-ggsave(
-  "transition_functions_net_country_year.jpeg",
-  country_year_plots,
-  width = 24,
-  height = 7,
-  dpi = 300
-)
-
-
-
-
-
-
-library(dplyr)
-library(ggplot2)
-library(np)
-library(patchwork)
-
-make_transition_ci <- function(data, xvar, yvar, title, xlab, ylab, B = 300) {
-  
-  df <- data %>%
-    filter(
-      !is.na(.data[[xvar]]),
-      !is.na(.data[[yvar]])
-    )
-  
-  grid <- data.frame(
-    x = seq(
-      quantile(df[[xvar]], 0.01, na.rm = TRUE),
-      quantile(df[[xvar]], 0.99, na.rm = TRUE),
-      length.out = 250
-    )
-  )
-  
-  names(grid) <- xvar
-  
-  fit <- npreg(
-    as.formula(paste(yvar, "~", xvar)),
-    data = df,
-    regtype = "ll"
-  )
-  
-  grid$fit <- predict(fit, newdata = grid)
-  
-  boot_mat <- replicate(B, {
-    idx <- sample(seq_len(nrow(df)), replace = TRUE)
-    boot_df <- df[idx, ]
-    
-    boot_fit <- tryCatch(
-      npreg(
-        as.formula(paste(yvar, "~", xvar)),
-        data = boot_df,
-        regtype = "ll"
-      ),
-      error = function(e) NULL
-    )
-    
-    if (is.null(boot_fit)) {
-      rep(NA_real_, nrow(grid))
-    } else {
-      predict(boot_fit, newdata = grid)
-    }
-  })
-  
-  grid$lower <- apply(boot_mat, 1, quantile, probs = 0.025, na.rm = TRUE)
-  grid$upper <- apply(boot_mat, 1, quantile, probs = 0.975, na.rm = TRUE)
-  
-  ggplot(grid, aes(x = .data[[xvar]], y = fit)) +
-    geom_ribbon(
-      aes(ymin = lower, ymax = upper),
-      alpha = 0.2
-    ) +
-    geom_line(linewidth = 1.1) +
-    geom_abline(
-      intercept = 0,
-      slope = 1,
-      linetype = "dashed"
-    ) +
-    labs(
-      title = title,
-      x = xlab,
-      y = ylab
-    ) +
-    theme_minimal(base_size = 12)
-}
-
-set.seed(123)
-
-country_year_plots <- (
-  make_transition_ci(
-    df_trans,
-    "rel_log_pub_t",
-    "rel_log_pub_t5",
-    "Publications",
-    "Position at t",
-    "Position at t + 5",
-    B = 20
-  ) |
-  make_transition_ci(
-    df_trans,
-    "rel_log_cit_t",
-    "rel_log_cit_t5",
-    "Citations",
-    "Position at t",
-    "Position at t + 5",
-    B = 20
-  ) |
-  make_transition_ci(
-    df_trans,
-    "rel_log_cpp_t",
-    "rel_log_cpp_t5",
-    "Citations/publication",
-    "Position at t",
-    "Position at t + 5",
-    B = 20
+# 6. Plot
+p_balb <- ggplot(
+  decile_data,
+  aes(
+    x = year,
+    y = value,
+    group = percentile,
+    linetype = percentile
   )
 ) +
-  plot_annotation(
-    title = "Transition functions net of country-year mean"
+  geom_line(linewidth = 0.75) +
+  geom_hline(
+    yintercept = 0,
+    linewidth = 0.6
+  ) +
+  facet_grid(
+    cohort_group ~ threshold_group
+  ) +
+  labs(
+    title = "Distance-to-frontier dynamics above and below citation-intensity threshold",
+    x = "Year",
+    y = "Distance to national citation-intensity frontier",
+    linetype = "Percentile"
+  ) +
+  scale_x_continuous(
+    breaks = seq(base_year, end_year, by = 2)
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold", size = 13),
+    panel.grid.minor = element_blank()
   )
 
-country_year_plots
+p_balb
 
 ggsave(
-  "transition_functions_net_country_year_ci.jpeg",
-  country_year_plots,
-  width = 20,
-  height = 6,
+  "balboni_style_distance_to_frontier.jpeg",
+  p_balb,
+  width = 11,
+  height = 8,
   dpi = 300
 )
+
+
+# 7. Diagnostics
+df_balb %>%
+  count(cohort_group, threshold_group)
+
+decile_data %>%
+  group_by(cohort_group, threshold_group) %>%
+  summarise(
+    min_year = min(year),
+    max_year = max(year),
+    .groups = "drop"
+  )
+
+
+
+ggplot(
+  decile_data,
+  aes(
+    x = year,
+    y = value,
+    group = percentile,
+    color = percentile,
+    linetype = percentile
+  )
+) +
+  geom_line(linewidth = 1) +
+  geom_hline(
+    yintercept = 0,
+    linewidth = 0.6,
+    color = "black"
+  ) +
+  facet_grid(
+    cohort_group ~ threshold_group
+  ) +
+  scale_color_viridis_d(
+
+  option = "plasma",
+
+  end = 0.9
+
+) +
+  labs(
+    title = "Distance-to-frontier dynamics above and below citation-intensity threshold",
+    x = "Year",
+    y = "Distance to national citation-intensity frontier",
+    color = "Percentile",
+    linetype = "Percentile"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold", size = 13),
+    panel.grid.minor = element_blank()
+  )
+
+
+
+library(mgcv)
+
+gam_fit <- gam(
+  rel_log_cpp_t5 ~ s(rel_log_cpp_t),
+  data = df_trans
+)
+
+summary(gam_fit)
+plot(gam_fit)
+
+ggsave(
+  filename = "balboni_distance_frontier.jpeg",
+  plot = p_balb,
+  width = 14,
+  height = 10,
+  units = "in",
+  dpi = 600
+)
+
+jpeg(
+  "gam_transition_plot.jpeg",
+  width = 1800,
+  height = 1200,
+  res = 300
+)
+
+plot(
+  gam_fit,
+  shade = TRUE,
+  shade.col = "lightgrey",
+  seWithMean = TRUE
+)
+
+dev.off()
+
+
+library(gratia)
+library(ggplot2)
+
+p <- draw(gam_fit) +
+  labs(
+    x = "Relative citation intensity at t",
+    y = "Estimated smooth effect"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_blank()
+  )
+
+ggsave(
+  "gam_publication.jpeg",
+  p,
+  width = 7,
+  height = 5,
+  dpi = 600,
+  bg = "white"
+)
+
+jpeg(
+  "gam_publication.jpeg",
+  width = 1800,
+  height = 1200,
+  res = 300,
+  quality = 100
+)
+
+par(
+  mar = c(4,4,1,1),   # bottom,left,top,right
+  mgp = c(2.2,0.7,0),
+  xaxs = "i",
+  yaxs = "i"
+)
+
+plot(
+  gam_fit,
+  residuals = FALSE,
+  rug = TRUE,
+  shade = TRUE,
+  shade.col = "grey85",
+  seWithMean = TRUE,
+  lwd = 2,
+  cex.lab = 1.3,
+  cex.axis = 1.1
+)
+
+dev.off()
+
+
+
+threshold <- 1.28
+
+jpeg(
+  "gam_threshold.jpeg",
+  width = 1800,
+  height = 1200,
+  res = 300
+)
+
+plot(
+  gam_fit,
+  shade = TRUE,
+  shade.col = "grey85",
+  residuals = FALSE,
+  rug = TRUE
+)
+
+abline(
+  v = threshold,
+  col = "red",
+  lwd = 1,
+  lty = 1
+)
+
+dev.off()
+
+library(lmtest)
+
+bptest(seg$lm.fit)
+
+bptest(seg$lm.fit)
