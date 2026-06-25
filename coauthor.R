@@ -8,7 +8,7 @@ library(readr)
 # ── Settings ──────────────────────────────────────────────────────────────────
 OPENALEX_API_KEY <- "RNnWtjEHVZgXnaQzeN1KuT"
 options(openalexR.mailto = "Marcel.Nguyen@ens.psl.eu")  # also set this for the polite pool
-plan(multisession, workers = 4)
+plan(multisession, workers = 2)
 
 # ── Helper: count distinct countries in an authorship list ───────────────────
 get_country_count <- function(a) {
@@ -813,6 +813,8 @@ library(future)
 library(openalexR)
 library(readr)
 
+df_africa <- read_csv('df_africa.csv')
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 OPENALEX_API_KEY <- Sys.getenv("OPENALEX_API_KEY")  # rotate the previously exposed key
 options(openalexR.mailto = "Marcel.Nguyen@ens.psl.eu")
@@ -882,7 +884,7 @@ classify_collab <- function(codes) {
 
 # ── Fetch function — checks count first to avoid the openalexR zero-result bug ─
 fetch_international_share_year <- function(inst_id, year) {
-  Sys.sleep(runif(1, 1, 2))
+  Sys.sleep(runif(1, 1, 3))
 
   # Step 1: cheap count-only check. Sidesteps the pages="all" bug entirely
   # when there are zero matching works (the actual root cause of the crash).
@@ -929,7 +931,7 @@ fetch_international_share_year <- function(inst_id, year) {
       entity           = "works",
       institutions.id  = inst_id,
       publication_year = as.integer(year),
-      per_page         = 200,
+      per_page         = 100,
       pages            = "all",
       options          = list(api_key = OPENALEX_API_KEY),
       verbose          = FALSE
@@ -1046,3 +1048,421 @@ df_africa <- df_africa |>
   left_join(results, by = c("inst_id", "year"))
 
 plan(sequential)
+
+
+
+
+
+# ── Robust helper: country codes from authorships ─────────────────────────────
+
+get_country_codes <- function(authorship_df) {
+  
+  tryCatch({
+    
+    a <- authorship_df
+    
+    if (is.null(a)) return(character(0))
+    if (!is.data.frame(a)) return(character(0))
+    if (nrow(a) == 0) return(character(0))
+    
+    if ("countries" %in% names(a)) {
+      countries <- a$countries |>
+        map(function(x) {
+          if (is.null(x) || length(x) == 0) {
+            NA_character_
+          } else {
+            as.character(x)
+          }
+        }) |>
+        unlist(use.names = FALSE)
+      
+      out <- unique(na.omit(countries))
+      if (length(out) > 0) return(out)
+    }
+    
+    if ("affiliations" %in% names(a)) {
+      countries <- a$affiliations |>
+        map(function(x) {
+          if (is.null(x)) return(NA_character_)
+          if (!is.data.frame(x)) return(NA_character_)
+          if (nrow(x) == 0) return(NA_character_)
+          if (!"country_code" %in% names(x)) return(NA_character_)
+          
+          as.character(x$country_code)
+        }) |>
+        unlist(use.names = FALSE)
+      
+      out <- unique(na.omit(countries))
+      if (length(out) > 0) return(out)
+    }
+    
+    if ("institutions" %in% names(a)) {
+      countries <- a$institutions |>
+        map(function(x) {
+          if (is.null(x)) return(NA_character_)
+          if (!is.data.frame(x)) return(NA_character_)
+          if (nrow(x) == 0) return(NA_character_)
+          if (!"country_code" %in% names(x)) return(NA_character_)
+          
+          as.character(x$country_code)
+        }) |>
+        unlist(use.names = FALSE)
+      
+      out <- unique(na.omit(countries))
+      if (length(out) > 0) return(out)
+    }
+    
+    character(0)
+    
+  }, error = function(e) {
+    character(0)
+  })
+}
+
+library(dplyr)
+
+library(purrr)
+
+library(openalexR)
+
+library(tibble)
+
+fetch_works_manual_pages <- function(inst_id, year, per_page = 200, max_pages = 100) {
+
+  
+
+  pages_list <- list()
+
+  
+
+  for (p in seq_len(max_pages)) {
+
+    
+
+    Sys.sleep(runif(1, 0.8, 1.5))
+
+    
+
+    page <- tryCatch(
+
+      oa_fetch(
+
+        entity = "works",
+
+        institutions.id = inst_id,
+
+        publication_year = as.integer(year),
+
+        per_page = per_page,
+
+        pages = p,
+
+        options = list(api_key = OPENALEX_API_KEY),
+
+        verbose = FALSE
+
+      ),
+
+      error = function(e) {
+
+        message(sprintf(
+
+          "[PAGE FETCH ERROR] page %d | %s %d | %s",
+
+          p, inst_id, year, conditionMessage(e)
+
+        ))
+
+        NULL
+
+      }
+
+    )
+
+    
+
+    if (is.null(page)) break
+
+    if (nrow(page) == 0) break
+
+    
+
+    pages_list[[p]] <- page
+
+    
+
+    message(sprintf(
+
+      "Fetched page %d | %s %d | rows: %d",
+
+      p, inst_id, year, nrow(page)
+
+    ))
+
+    
+
+    if (nrow(page) < per_page) break
+
+  }
+
+  
+
+  if (length(pages_list) == 0) {
+
+    return(tibble())
+
+  }
+
+  
+
+  bind_rows(pages_list)
+
+} 
+
+# ── Helper: classify collaboration type ───────────────────────────────────────
+
+classify_collab <- function(codes) {
+  
+  codes <- unique(na.omit(as.character(codes)))
+  n_countries <- length(codes)
+  
+  if (n_countries == 0) {
+    return(list(
+      n_countries = NA_integer_,
+      international_any = NA,
+      inter_african = NA,
+      extra_african = NA
+    ))
+  }
+  
+  if (n_countries < 2) {
+    return(list(
+      n_countries = n_countries,
+      international_any = FALSE,
+      inter_african = FALSE,
+      extra_african = FALSE
+    ))
+  }
+  
+  has_non_african <- any(!(codes %in% african_codes))
+  has_african_pair <- sum(codes %in% african_codes) >= 2
+  
+  list(
+    n_countries = n_countries,
+    international_any = TRUE,
+    inter_african = has_african_pair,
+    extra_african = has_non_african
+  )
+}
+
+# ── Empty output row ──────────────────────────────────────────────────────────
+
+empty_collab_row <- function(inst_id, year, n_works = NA_integer_) {
+  tibble(
+    inst_id = inst_id,
+    year = as.integer(year),
+    n_works = n_works,
+    n_international_any = NA_integer_,
+    international_share_any = NA_real_,
+    n_inter_african = NA_integer_,
+    inter_african_share = NA_real_,
+    n_extra_african = NA_integer_,
+    extra_african_share = NA_real_
+  )
+}
+
+zero_collab_row <- function(inst_id, year) {
+  tibble(
+    inst_id = inst_id,
+    year = as.integer(year),
+    n_works = 0L,
+    n_international_any = 0L,
+    international_share_any = NA_real_,
+    n_inter_african = 0L,
+    inter_african_share = NA_real_,
+    n_extra_african = 0L,
+    extra_african_share = NA_real_
+  )
+}
+
+# ── Main fetch function ───────────────────────────────────────────────────────
+
+fetch_international_share_year <- function(inst_id, year) {
+  
+  works <- fetch_works_manual_pages(
+    inst_id = inst_id,
+    year = year,
+    per_page = 200,
+    max_pages = 100
+  )
+  
+  if (is.null(works)) {
+    return(empty_collab_row(inst_id, year, NA_integer_))
+  }
+  
+  if (nrow(works) == 0) {
+    return(zero_collab_row(inst_id, year))
+  }
+  
+  if (!"authorships" %in% names(works)) {
+    return(empty_collab_row(inst_id, year, nrow(works)))
+  }
+  
+  result <- tryCatch({
+    
+    works |>
+      mutate(
+        country_codes = map(authorships, get_country_codes),
+        classification = map(country_codes, classify_collab),
+        
+        international_any = map_lgl(
+          classification,
+          ~ isTRUE(.x$international_any)
+        ),
+        
+        inter_african = map_lgl(
+          classification,
+          ~ isTRUE(.x$inter_african)
+        ),
+        
+        extra_african = map_lgl(
+          classification,
+          ~ isTRUE(.x$extra_african)
+        )
+      ) |>
+      summarise(
+        n_works = n(),
+        
+        n_international_any = sum(international_any, na.rm = TRUE),
+        international_share_any = n_international_any / n_works,
+        
+        n_inter_african = sum(inter_african, na.rm = TRUE),
+        inter_african_share = n_inter_african / n_works,
+        
+        n_extra_african = sum(extra_african, na.rm = TRUE),
+        extra_african_share = n_extra_african / n_works
+      ) |>
+      mutate(
+        inst_id = inst_id,
+        year = as.integer(year)
+      ) |>
+      select(
+        inst_id,
+        year,
+        n_works,
+        n_international_any,
+        international_share_any,
+        n_inter_african,
+        inter_african_share,
+        n_extra_african,
+        extra_african_share
+      )
+    
+  }, error = function(e) {
+    
+    message(sprintf(
+      "[PARSE ERROR] %s | %s %d",
+      conditionMessage(e),
+      inst_id,
+      year
+    ))
+    
+    empty_collab_row(inst_id, year, nrow(works))
+  })
+  
+  result
+}
+
+# ── Resume from checkpoint ────────────────────────────────────────────────────
+
+to_fetch <- df_africa |>
+  distinct(inst_id, year) |>
+  filter(!is.na(inst_id))
+
+results <- if (file.exists("international_share_year_progress.rds")) {
+  
+  message("Resuming from checkpoint...")
+  
+  readRDS("international_share_year_progress.rds") |>
+    filter(!is.na(n_works))
+  
+} else {
+  
+  tibble(
+    inst_id = character(),
+    year = integer(),
+    n_works = integer(),
+    n_international_any = integer(),
+    international_share_any = numeric(),
+    n_inter_african = integer(),
+    inter_african_share = numeric(),
+    n_extra_african = integer(),
+    extra_african_share = numeric()
+  )
+}
+
+to_fetch_remaining <- to_fetch |>
+  anti_join(results, by = c("inst_id", "year"))
+
+message(sprintf("%d requests remaining", nrow(to_fetch_remaining)))
+
+# ── Chunked loop ──────────────────────────────────────────────────────────────
+# Start sequential for stability. Switch to workers = 2 only after testing.
+
+plan(sequential)
+
+chunk_size <- 50
+
+chunks <- split(
+  to_fetch_remaining,
+  ceiling(seq_len(nrow(to_fetch_remaining)) / chunk_size)
+)
+
+for (k in seq_along(chunks)) {
+  
+  message(sprintf("Chunk %d / %d", k, length(chunks)))
+  
+  chunk_result <- pmap_dfr(
+    chunks[[k]],
+    function(inst_id, year) {
+      
+      tryCatch(
+        fetch_international_share_year(inst_id, year),
+        error = function(e) {
+          
+          message(sprintf(
+            "[FATAL ERROR] %s | %s %d",
+            conditionMessage(e),
+            inst_id,
+            year
+          ))
+          
+          empty_collab_row(inst_id, year, NA_integer_)
+        }
+      )
+    }
+  )
+  
+  results <- bind_rows(results, chunk_result)
+  
+  saveRDS(results, "international_share_year_progress.rds")
+  write_csv(results, "international_share_year.csv")
+  
+  message(sprintf(
+    "Done | total fetched: %d | successful: %d | failed: %d",
+    nrow(results),
+    sum(!is.na(results$n_works)),
+    sum(is.na(results$n_works))
+  ))
+}
+
+# ── Merge back ────────────────────────────────────────────────────────────────
+
+df_africa <- df_africa |>
+  left_join(results, by = c("inst_id", "year"))
+
+plan(sequential)
+
+write_csv(results, 'results_inter.csv')
+
+
