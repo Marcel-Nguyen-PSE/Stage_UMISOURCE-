@@ -174,3 +174,8 @@ df_africa <- df_africa |>
   left_join(results, by = c("inst_id", "year"))
 
 plan(sequential)
+
+
+
+df_africa_founded <- df_africa %>%
+  filter(year >= founded_date)

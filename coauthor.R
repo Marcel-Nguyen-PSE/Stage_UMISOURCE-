@@ -8,7 +8,7 @@ library(readr)
 # ── Settings ──────────────────────────────────────────────────────────────────
 OPENALEX_API_KEY <- "RNnWtjEHVZgXnaQzeN1KuT"
 options(openalexR.mailto = "Marcel.Nguyen@ens.psl.eu")  # also set this for the polite pool
-plan(multisession, workers = 2)
+plan(multisession, workers = 4)
 
 # ── Helper: count distinct countries in an authorship list ───────────────────
 get_country_count <- function(a) {
@@ -1139,7 +1139,7 @@ fetch_works_manual_pages <- function(inst_id, year, per_page = 200, max_pages = 
 
     
 
-    Sys.sleep(runif(1, 0.8, 1.5))
+    Sys.sleep(runif(1, 3, 6))
 
     
 
@@ -1462,6 +1462,18 @@ df_africa <- df_africa |>
   left_join(results, by = c("inst_id", "year"))
 
 plan(sequential)
+
+
+oa_fetch(
+  entity = "works",
+  institutions.id = "I4405255384",
+  publication_year = 2018,
+  per_page = 5,
+  pages = 1,
+  options = list(api_key = OPENALEX_API_KEY)
+)
+
+
 
 write_csv(results, 'results_inter.csv')
 
