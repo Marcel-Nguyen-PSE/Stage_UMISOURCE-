@@ -3449,3 +3449,304 @@ ggsave(
   height = 8,
   dpi = 500
 )
+
+
+
+
+# ------------------------------------------------------------
+# 7. Better “regional flow map” style
+# ------------------------------------------------------------
+
+# Optional: draw broad African subregion circles/polygons
+africa_regions_bg <- tibble::tribble(
+  ~origin_group,      ~lon, ~lat,
+  "Maghreb",            10,  28,
+  "West Africa",        -5,  10,
+  "Central Africa",     20,   0,
+  "East Africa",        38,   0,
+  "South Africa",       25, -28
+)
+
+p_extra_africa_groups <- ggplot() +
+
+  # world background
+  geom_sf(
+    data = world,
+    fill = "grey96",
+    color = "grey85",
+    linewidth = 0.15
+  ) +
+
+  # soft background circles for African subregions
+  geom_point(
+    data = africa_regions_bg,
+    aes(x = lon, y = lat, color = origin_group),
+    size = 38,
+    alpha = 0.12
+  ) +
+
+  # destination nodes
+  geom_point(
+    data = destination_coords,
+    aes(x = lon_dest, y = lat_dest),
+    size = 5.8,
+    color = "grey15"
+  ) +
+
+  geom_text(
+    data = destination_coords,
+    aes(x = lon_dest, y = lat_dest, label = destination_group),
+    nudge_y = 5,
+    size = 4,
+    fontface = "bold"
+  ) +
+
+  # origin nodes
+  geom_point(
+    data = origin_coords,
+    aes(x = lon_origin, y = lat_origin, color = origin_group),
+    size = 5.2
+  ) +
+
+  geom_text(
+    data = origin_coords,
+    aes(
+      x = lon_origin,
+      y = lat_origin,
+      label = origin_group,
+      color = origin_group
+    ),
+    nudge_y = 4,
+    size = 3.8,
+    fontface = "bold"
+  ) +
+
+  # collaboration flows
+  geom_curve(
+    data = extra_africa_map,
+    aes(
+      x = lon_origin,
+      y = lat_origin,
+      xend = lon_dest,
+      yend = lat_dest,
+      linewidth = weight,
+      alpha = weight_scaled,
+      color = origin_group
+    ),
+    curvature = 0.22,
+    arrow = arrow(length = unit(0.09, "inches"), type = "closed"),
+    lineend = "round"
+  ) +
+
+  scale_color_manual(
+    values = c(
+      "Maghreb" = "#7B3294",
+      "West Africa" = "#1A9850",
+      "Central Africa" = "#F28E1C",
+      "East Africa" = "#2C7BB6",
+      "South Africa" = "#D7191C"
+    ),
+    name = "African subregions"
+  ) +
+
+  scale_linewidth_continuous(
+    range = c(0.25, 2.8),
+    breaks = c(50, 100, 150, 200),
+    name = "Collaborations"
+  ) +
+
+  scale_alpha_continuous(
+    range = c(0.30, 0.85),
+    guide = "none"
+  ) +
+
+  coord_sf(
+    xlim = c(-170, 160),
+    ylim = c(-55, 75),
+    expand = FALSE
+  ) +
+
+  labs(
+    title = "Extra-African scientific collaboration flows by African subregion, 2025",
+    subtitle = "Flows from African subregions to the rest of the world (Europe, US, LATAM, Asia, Oceania)",
+    caption = paste(
+      "Notes: Arrows represent total scientific collaborations",
+      "from each African subregion to major world regions.",
+      "Thickness of arrows indicates the number of collaborations.",
+      sep = "\n"
+    ),
+    x = NULL,
+    y = NULL
+  ) +
+
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 5, linewidth = 0)
+    ),
+    linewidth = guide_legend(
+      override.aes = list(color = "grey20")
+    )
+  ) +
+
+  theme_void(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 12, color = "grey35", hjust = 0.5),
+    plot.caption = element_text(size = 9, color = "grey35", hjust = 0.78),
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 10),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+p_extra_africa_groups
+
+ggsave(
+  "extra_african_collaboration_flows_by_subregion_2025.jpeg",
+  p_extra_africa_groups,
+  width = 14,
+  height = 8,
+  dpi = 500
+)
+
+
+
+
+
+# ------------------------------------------------------------
+# 6bis. African subregion areas on the map
+# ------------------------------------------------------------
+
+africa_region_map <- world %>%
+  mutate(country_code = iso_a2) %>%
+  filter(country_code %in% african_codes) %>%
+  left_join(origin_groups, by = c("country_code" = "origin")) %>%
+  filter(!is.na(origin_group))
+
+# ------------------------------------------------------------
+# 7. Plot grouped Africa -> destination bloc flows
+# ------------------------------------------------------------
+
+p_extra_africa_groups <- ggplot() +
+
+  geom_sf(
+    data = world,
+    fill = "grey96",
+    color = "grey85",
+    linewidth = 0.15
+  ) +
+
+  # African subregions filled by actual country areas
+  geom_sf(
+    data = africa_region_map,
+    aes(fill = origin_group),
+    color = NA,
+    alpha = 0.25
+  ) +
+
+  geom_curve(
+    data = extra_africa_map,
+    aes(
+      x = lon_origin,
+      y = lat_origin,
+      xend = lon_dest,
+      yend = lat_dest,
+      linewidth = weight,
+      alpha = weight_scaled,
+      color = origin_group
+    ),
+    curvature = 0.22,
+    arrow = arrow(length = unit(0.09, "inches"), type = "closed"),
+    lineend = "round"
+  ) +
+
+  geom_point(
+    data = destination_coords,
+    aes(x = lon_dest, y = lat_dest),
+    size = 5.8,
+    color = "grey15"
+  ) +
+
+  geom_text(
+    data = destination_coords,
+    aes(x = lon_dest, y = lat_dest, label = destination_group),
+    nudge_y = 5,
+    size = 4,
+    fontface = "bold"
+  ) +
+
+  geom_point(
+    data = origin_coords,
+    aes(x = lon_origin, y = lat_origin, color = origin_group),
+    size = 5.2
+  ) +
+
+  geom_text(
+    data = origin_coords,
+    aes(
+      x = lon_origin,
+      y = lat_origin,
+      label = origin_group,
+      color = origin_group
+    ),
+    nudge_y = 4,
+    size = 3.8,
+    fontface = "bold"
+  ) +
+
+  scale_color_manual(
+    values = c(
+      "Maghreb" = "#7B3294",
+      "West Africa" = "#1A9850",
+      "Central Africa" = "#F28E1C",
+      "East Africa" = "#2C7BB6",
+      "South Africa" = "#D7191C"
+    ),
+    name = "African subregions"
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "Maghreb" = "#7B3294",
+      "West Africa" = "#1A9850",
+      "Central Africa" = "#F28E1C",
+      "East Africa" = "#2C7BB6",
+      "South Africa" = "#D7191C"
+    ),
+    guide = "none"
+  ) +
+
+  scale_linewidth_continuous(
+    range = c(0.25, 2.8),
+    breaks = c(50, 100, 150, 200),
+    name = "Collaborations"
+  ) +
+
+  scale_alpha_continuous(
+    range = c(0.30, 0.85),
+    guide = "none"
+  ) +
+
+  coord_sf(
+    xlim = c(-170, 160),
+    ylim = c(-55, 75),
+    expand = FALSE
+  )  +
+
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 5, linewidth = 0)
+    ),
+    linewidth = guide_legend(
+      override.aes = list(color = "grey20")
+    )
+  ) +
+
+  theme_void(base_size = 13) +
+  theme(legend.position = 'none')
+
+p_extra_africa_groups
+
+ggsave('pextra.jpeg', p_extra_africa_groups, width = 16, height = 9, dpi =)
