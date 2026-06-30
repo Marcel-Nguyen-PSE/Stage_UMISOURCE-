@@ -2831,3 +2831,4 @@ etable(
   fitstat = ~ n + r2 + ar2,
   se.below = TRUE
 )
+
