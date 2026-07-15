@@ -1,3 +1,9 @@
+target_year <- 2025
+per_page <- 200
+max_pages <- 1000
+
+mailto <- "Marcel.Nguyen@ens.psl.eu"
+
 african_codes <- c(
   "DZ", "AO", "BJ", "BW", "BF", "BI", "CV", "CM", "CF", "TD",
   "KM", "CG", "CD", "CI", "DJ", "EG", "GQ", "ER", "SZ", "ET",
@@ -6,6 +12,189 @@ african_codes <- c(
   "ST", "SN", "SC", "SL", "SO", "ZA", "SS", "SD", "TZ", "TG",
   "TN", "UG", "ZM", "ZW"
 )
+
+fetch_openalex_page <- function(page, year = target_year, per_page = 200) {
+  req <- request("https://api.openalex.org/works") |>
+    req_url_query(
+      filter = paste0(
+        "authorships.institutions.continent:africa,",
+        "publication_year:", as.integer(year)
+      ),
+      per_page = per_page,
+      page = page,
+      api_key = OPENALEX_API_KEY,
+      mailto = mailto
+    ) |>
+    req_timeout(60)
+  
+  resp <- req_perform(req)
+  
+  jsonlite::fromJSON(
+    resp_body_string(resp),
+    simplifyVector = FALSE
+  )
+}
+
+fetch_africa_works <- function(year = target_year, per_page = 200, max_pages = 1000) {
+  out <- list()
+  
+  for (p in seq_len(max_pages)) {
+    
+    Sys.sleep(runif(1, 1.5, 3))
+    
+    message(sprintf("Fetching page %d", p))
+    
+    page_json <- tryCatch(
+      fetch_openalex_page(
+        page = p,
+        year = year,
+        per_page = per_page
+      ),
+      error = function(e) {
+        message(sprintf(
+          "[FETCH ERROR] page %d | %s",
+          p,
+          conditionMessage(e)
+        ))
+        NULL
+      }
+    )
+    
+    if (is.null(page_json)) break
+    if (length(page_json$results) == 0) break
+    
+    page_df <- tryCatch(
+      openalexR::oa2df(page_json$results, entity = "works"),
+      error = function(e) {
+        message(sprintf(
+          "[oa2df ERROR] page %d | %s",
+          p,
+          conditionMessage(e)
+        ))
+        tibble()
+      }
+    )
+    
+    if (nrow(page_df) == 0) break
+    
+    out[[p]] <- page_df
+    
+    works_tmp <- bind_rows(out) |>
+      distinct(id, .keep_all = TRUE)
+    
+    saveRDS(works_tmp, "africa_works_2025_progress.rds")
+    
+    if (nrow(page_df) < per_page) break
+  }
+  
+  if (length(out) == 0) return(tibble())
+  
+  bind_rows(out) |>
+    distinct(id, .keep_all = TRUE)
+}
+
+get_country_codes <- function(authorship_df) {
+  
+  tryCatch({
+    
+    a <- authorship_df
+    
+    if (is.null(a)) return(character(0))
+    if (!is.data.frame(a)) return(character(0))
+    if (nrow(a) == 0) return(character(0))
+    
+    if ("countries" %in% names(a)) {
+      countries <- a$countries |>
+        map(function(x) {
+          if (is.null(x) || length(x) == 0) {
+            NA_character_
+          } else {
+            as.character(x)
+          }
+        }) |>
+        unlist(use.names = FALSE)
+      
+      return(unique(na.omit(countries)))
+    }
+    
+    if ("affiliations" %in% names(a)) {
+      countries <- a$affiliations |>
+        map(function(x) {
+          if (is.null(x)) return(NA_character_)
+          if (!is.data.frame(x)) return(NA_character_)
+          if (nrow(x) == 0) return(NA_character_)
+          if (!"country_code" %in% names(x)) return(NA_character_)
+          as.character(x$country_code)
+        }) |>
+        unlist(use.names = FALSE)
+      
+      return(unique(na.omit(countries)))
+    }
+    
+    if ("institutions" %in% names(a)) {
+      countries <- a$institutions |>
+        map(function(x) {
+          if (is.null(x)) return(NA_character_)
+          if (!is.data.frame(x)) return(NA_character_)
+          if (nrow(x) == 0) return(NA_character_)
+          if (!"country_code" %in% names(x)) return(NA_character_)
+          as.character(x$country_code)
+        }) |>
+        unlist(use.names = FALSE)
+      
+      return(unique(na.omit(countries)))
+    }
+    
+    character(0)
+    
+  }, error = function(e) {
+    character(0)
+  })
+}
+
+make_africa_flows <- function(codes) {
+  
+  codes <- sort(unique(na.omit(as.character(codes))))
+  
+  african <- codes[codes %in% african_codes]
+  partner <- codes[codes != ""]
+  
+  if (length(african) == 0 || length(partner) < 2) {
+    return(tibble(
+      origin = character(),
+      destination = character()
+    ))
+  }
+  
+  expand_grid(
+    origin = african,
+    destination = partner
+  ) |>
+    filter(origin != destination)
+}
+
+africa_works_2025 <- fetch_africa_works(
+  year = target_year,
+  per_page = per_page,
+  max_pages = max_pages
+)
+
+country_flows_raw_2025 <- africa_works_2025 |>
+  select(work_id = id, authorships) |>
+  mutate(
+    country_codes = map(authorships, get_country_codes),
+    flows = map(country_codes, make_africa_flows)
+  ) |>
+  select(work_id, flows) |>
+  unnest(flows)
+
+country_flows_2025 <- country_flows_raw_2025 |>
+  distinct(work_id, origin, destination) |>
+  count(origin, destination, name = "weight") |>
+  arrange(desc(weight))
+
+saveRDS(country_flows_raw_2025, "country_flows_raw_2025.rds")
+saveRDS(country_flows_2025, "country_flows_2025.rds")
 
 # ------------------------------------------------------------
 # 2. Keep Africa -> non-Africa collaboration flows
