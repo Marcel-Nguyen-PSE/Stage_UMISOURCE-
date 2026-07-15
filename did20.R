@@ -866,6 +866,8 @@ ps_match <- matchit(
 summary(ps_match)
 love.plot(ps_match, threshold = 0.1)
 
+help(love.plot)
+
 matched_units <- match.data(ps_match) %>%
   select(inst_id, treated_ever, weights)
 

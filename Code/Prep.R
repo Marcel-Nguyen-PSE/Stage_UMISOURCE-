@@ -35,6 +35,8 @@ library(factoextra)
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(scales)
+library(MatchIt)
+library(cobalt)
 
 ### Data fetching process 
 
