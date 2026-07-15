@@ -30,6 +30,8 @@ library(countrycode)
 library(WDI)
 library(typstable)
 library(mgcv)
+library(FactoMineR)
+library(factoextra)
 
 ### Data fetching process 
 
