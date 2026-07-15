@@ -1,0 +1,42 @@
+
+\begingroup
+\centering
+\begin{tabular}{lcccccc}
+   \tabularnewline \midrule \midrule
+   Dependent Variable: & \multicolumn{6}{c}{n\_publication}\\
+   Model:                                  & (1)          & (2)            & (3)            & (4)            & (5)            & (6)\\  
+   \midrule
+   \emph{Variables}\\
+   ACE I                                   & 0.1562$^{*}$ & 0.1434$^{***}$ & 0.1456$^{***}$ & 0.1458$^{***}$ & 0.0227$^{**}$  & 0.0157\\   
+                                           & (0.0939)     & (0.0256)       & (0.0254)       & (0.0244)       & (0.0114)       & (0.0120)\\   
+   ACE II                                  & 0.0840       & 0.2200$^{***}$ & 0.2196$^{***}$ & 0.2201$^{***}$ & 0.0390         & 0.0576\\   
+                                           & (0.1328)     & (0.0527)       & (0.0534)       & (0.0520)       & (0.2091)       & (0.2055)\\   
+   Log citations (t-2)                     &              & 0.5023$^{***}$ & 0.4954$^{***}$ & 0.4956$^{***}$ & 0.4100$^{***}$ & 0.4036$^{***}$\\   
+                                           &              & (0.0286)       & (0.0296)       & (0.0315)       & (0.0207)       & (0.0198)\\   
+   International collaboration dummy (t-2) &              &                & 0.6555$^{***}$ &                &                &   \\   
+                                           &              &                & (0.1045)       &                &                &   \\   
+   Inter-African collaboration dummy (t-2) &              &                &                & 0.0012         & 0.1000$^{**}$  & 0.0931$^{*}$\\   
+                                           &              &                &                & (0.0967)       & (0.0508)       & (0.0500)\\   
+   Extra-African collaboration dummy (t-2) &              &                &                & 0.5538$^{***}$ & 0.5426$^{***}$ & 0.5397$^{***}$\\   
+                                           &              &                &                & (0.0920)       & (0.0785)       & (0.0766)\\   
+   DELTAS I                                &              &                &                &                &                & 0.0050\\   
+                                           &              &                &                &                &                & (0.0594)\\   
+   Log university age                      &              &                &                &                &                & 0.0572\\   
+                                           &              &                &                &                &                & (0.0401)\\   
+   \midrule
+   \emph{Fixed-effects}\\
+   inst\_id                                & Yes          & Yes            & Yes            & Yes            & Yes            & Yes\\  
+   year                                    & Yes          & Yes            & Yes            & Yes            &                & \\  
+   country\_year                           &              &                &                &                & Yes            & Yes\\  
+   \midrule
+   \emph{Fit statistics}\\
+   Observations                            & 23,422       & 12,490         & 12,490         & 12,490         & 12,085         & 12,085\\  
+   Pseudo R$^2$                            & 0.95880      & 0.97832        & 0.97843        & 0.97842        & 0.98270        & 0.98276\\  
+   BIC                                     & 625,944.1    & 178,665.6      & 177,861.6      & 177,908.9      & 141,190.8      & 140,789.6\\  
+   \midrule \midrule
+   \multicolumn{7}{l}{\emph{Clustered (country\_code) standard-errors in parentheses}}\\
+   \multicolumn{7}{l}{\emph{Signif. Codes: ***: 0.01, **: 0.05, *: 0.1}}\\
+\end{tabular}
+\par\endgroup
+
+
