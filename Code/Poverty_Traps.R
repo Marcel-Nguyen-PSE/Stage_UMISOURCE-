@@ -122,3 +122,24 @@ country_year_plots <- (
 plan(sequential) 
 
 ggsave('Output/country_plots_transition.jpeg', country_year_plots, width = 13, height = 6)
+
+gam_fit <- gam(
+  rel_log_cpp_t5 ~ s(rel_log_cpp_t),
+  data = df_trans
+)
+
+jpeg(
+  "Output/gam_transition_plot.jpeg",
+  width = 1800,
+  height = 1200,
+  res = 300
+)
+
+plot(
+  gam_fit,
+  shade = TRUE,
+  shade.col = "lightgrey",
+  seWithMean = TRUE
+)
+
+dev.off()

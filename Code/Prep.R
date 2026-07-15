@@ -29,6 +29,7 @@ library(furrr)
 library(countrycode)
 library(WDI)
 library(typstable)
+library(mgcv)
 
 ### Data fetching process 
 
