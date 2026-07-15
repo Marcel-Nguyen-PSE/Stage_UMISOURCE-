@@ -32,6 +32,9 @@ library(typstable)
 library(mgcv)
 library(FactoMineR)
 library(factoextra)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(scales)
 
 ### Data fetching process 
 
