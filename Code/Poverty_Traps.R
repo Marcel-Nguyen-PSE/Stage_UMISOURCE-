@@ -85,6 +85,8 @@ transition_path <- function(data, xvar, yvar, title, xlab, ylab,
 
 plan(multisession, workers = 2)
 
+# The process of kernel estimation can be very long (~30mins, you can lower the B = 'num' to speed up, but lose precision)
+
 set.seed(123)
 country_year_plots <- (
   transition_path(
