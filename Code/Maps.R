@@ -15,6 +15,8 @@ african_codes <- c(
 
 country_flows_2025 <- read_csv('Data/country_flows_2025.csv')
 
+# Data fetching process to get coauthorship of affiliated works (Very Long Process !!!!, jump to next section for computing) ----
+
 fetch_openalex_page <- function(page, year = target_year, per_page = 200) {
   req <- request("https://api.openalex.org/works") |>
     req_url_query(
@@ -197,6 +199,8 @@ country_flows_2025 <- country_flows_raw_2025 |>
 
 saveRDS(country_flows_raw_2025, "country_flows_raw_2025.rds")
 saveRDS(country_flows_2025, "country_flows_2025.rds")
+
+# Plotting of maps ---- 
 
 world <- ne_countries(
   scale = "medium",

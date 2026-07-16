@@ -107,6 +107,8 @@ iplot(
 
 dev.off()
 
+# Propensity-score matching DID estimate ---- 
+
 df_plot_metrics <- df_africa %>%
   group_by(inst_id) %>%
   mutate(
@@ -299,6 +301,8 @@ ps_match <- matchit(
   replace = FALSE
 )
 
+# Love plot ----
+
 love.plot(
   ps_match,
   stats = "mean.diffs",
@@ -327,4 +331,271 @@ ggsave(
   height = 6,
   dpi = 300
 )
+
+matched_units <- match.data(ps_match) %>%
+  select(inst_id, treated_ever, weights)
+
+df_matched <- df_base %>%
+  inner_join(matched_units, by = c("inst_id", "treated_ever")) %>%
+  mutate(
+    y_publications = n_publication,
+    y_citations = n_citations,
+    y_international = international_share_any
+  )
+
+run_event_pois <- function(data, outcome, treat_var, ref_year) {
+  fml <- as.formula(
+    paste0(
+      outcome,
+      " ~ i(year, ", treat_var, ", ref = ", ref_year, ") | inst_id + year"
+    )
+  )
+
+  fepois(
+    fml,
+    data = data,
+    weights = ~ weights,
+    cluster = ~ country_code
+  )
+}
+
+run_event_ols <- function(data, outcome, treat_var, ref_year) {
+  fml <- as.formula(
+    paste0(
+      outcome,
+      " ~ i(year, ", treat_var, ", ref = ", ref_year, ") | inst_id + year"
+    )
+  )
+
+  feols(
+    fml,
+    data = data,
+    weights = ~ weights,
+    cluster = ~ country_code
+  )
+}
+
+models <- list(
+  pub_ace1 = run_event_pois(
+    df_matched %>%
+      filter(ace1_ever == 1 | treated_ever == 0, !is.na(y_publications)),
+    "y_publications",
+    "ace1_ever",
+    2013
+  ),
+
+  pub_ace2 = run_event_pois(
+    df_matched %>%
+      filter(ace2_ever == 1 | treated_ever == 0, !is.na(y_publications)),
+    "y_publications",
+    "ace2_ever",
+    2015
+  ),
+
+  cit_ace1 = run_event_pois(
+    df_matched %>%
+      filter(ace1_ever == 1 | treated_ever == 0, !is.na(y_citations)),
+    "y_citations",
+    "ace1_ever",
+    2013
+  ),
+
+  cit_ace2 = run_event_pois(
+    df_matched %>%
+      filter(ace2_ever == 1 | treated_ever == 0, !is.na(y_citations)),
+    "y_citations",
+    "ace2_ever",
+    2015
+  ),
+
+  intl_ace1 = run_event_ols(
+    df_matched %>%
+      filter(ace1_ever == 1 | treated_ever == 0, !is.na(y_international)),
+    "y_international",
+    "ace1_ever",
+    2013
+  ),
+
+  intl_ace2 = run_event_ols(
+    df_matched %>%
+      filter(ace2_ever == 1 | treated_ever == 0, !is.na(y_international)),
+    "y_international",
+    "ace2_ever",
+    2015
+  )
+)
+
+extract_event <- function(model, outcome_label, program_label, treat_var, ref_year, treat_year) {
+  broom::tidy(model, conf.int = TRUE) %>%
+    filter(grepl(paste0("year::[0-9]+:", treat_var), term)) %>%
+    mutate(
+      year = as.integer(sub("year::([0-9]+):.*", "\\1", term)),
+      outcome = outcome_label,
+      program = program_label
+    ) %>%
+    select(outcome, program, year, estimate, conf.low, conf.high) %>%
+    bind_rows(
+      tibble(
+        outcome = outcome_label,
+        program = program_label,
+        year = ref_year,
+        estimate = 0,
+        conf.low = 0,
+        conf.high = 0
+      )
+    ) %>%
+    mutate(
+      event_time = year - treat_year
+    )
+}
+
+event_df <- bind_rows(
+  extract_event(models$pub_ace1,  "Publications", "ACE I",  "ace1_ever", 2013, 2014),
+  extract_event(models$pub_ace2,  "Publications", "ACE II", "ace2_ever", 2015, 2016),
+  extract_event(models$cit_ace1,  "Citations", "ACE I",  "ace1_ever", 2013, 2014),
+  extract_event(models$cit_ace2,  "Citations", "ACE II", "ace2_ever", 2015, 2016),
+  extract_event(models$intl_ace1, "International collaboration", "ACE I",  "ace1_ever", 2013, 2014),
+  extract_event(models$intl_ace2, "International collaboration", "ACE II", "ace2_ever", 2015, 2016)
+) %>%
+  mutate(
+    outcome = factor(
+      outcome,
+      levels = c("Publications", "Citations", "International collaboration")
+    ),
+    program = factor(program, levels = c("ACE I", "ACE II"))
+  )
+
+# DID plotting code ----
+
+jpeg(
+  filename = "Output/pub_ace1_ace2_did.jpeg",
+  width = 4800,
+  height = 2400,
+  units = "px",
+  res = 300,
+  quality = 100
+)
+
+par(
+  mfrow = c(1, 2),
+  mar = c(5, 5, 4, 2) + 0.1,
+  oma = c(0, 0, 3, 0)
+)
+
+iplot(
+  models$pub_ace1,
+  main = "ACE I",
+  xlab = "Year",
+  ylab = "Log incidence-rate ratio",
+  ci_level = 0.95,
+  ref.line = 0
+)
+
+iplot(
+  models$pub_ace2,
+  main = "ACE II",
+  xlab = "Year",
+  ylab = "Log incidence-rate ratio",
+  ci_level = 0.95,
+  ref.line = 0
+)
+
+mtext(
+  "Publications",
+  outer = TRUE,
+  side = 3,
+  line = 1,
+  font = 2,
+  cex = 1.4
+)
+
+dev.off()
+
+jpeg(
+  filename = "Output/cit_ace1_ace2_did.jpeg",
+  width = 4800,
+  height = 2400,
+  units = "px",
+  res = 300,
+  quality = 100
+)
+
+par(
+  mfrow = c(1, 2),
+  mar = c(5, 5, 4, 2) + 0.1,
+  oma = c(0, 0, 3, 0)
+)
+
+iplot(
+  models$cit_ace1,
+  main = "ACE I",
+  xlab = "Year",
+  ylab = "Log incidence-rate ratio",
+  ci_level = 0.95,
+  ref.line = 0
+)
+
+iplot(
+  models$cit_ace2,
+  main = "ACE II",
+  xlab = "Year",
+  ylab = "Log incidence-rate ratio",
+  ci_level = 0.95,
+  ref.line = 0
+)
+
+mtext(
+  "Citations",
+  outer = TRUE,
+  side = 3,
+  line = 1,
+  font = 2,
+  cex = 1.4
+)
+
+dev.off()
+
+jpeg(
+  filename = "Output/int_ace1_ace2_did.jpeg",
+  width = 4800,
+  height = 2400,
+  units = "px",
+  res = 300,
+  quality = 100
+)
+
+par(
+  mfrow = c(1, 2),
+  mar = c(5, 5, 4, 2) + 0.1,
+  oma = c(0, 0, 3, 0)
+)
+
+iplot(
+  models$intl_ace1,
+  main = "ACE I",
+  xlab = "Year",
+  ylab = "Log incidence-rate ratio",
+  ci_level = 0.95,
+  ref.line = 0
+)
+
+iplot(
+  models$intl_ace2,
+  main = "ACE II",
+  xlab = "Year",
+  ylab = "Log incidence-rate ratio",
+  ci_level = 0.95,
+  ref.line = 0
+)
+
+mtext(
+  "International Collaboration",
+  outer = TRUE,
+  side = 3,
+  line = 1,
+  font = 2,
+  cex = 1.4
+)
+
+dev.off()
 

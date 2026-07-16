@@ -38,12 +38,12 @@ library(scales)
 library(MatchIt)
 library(cobalt)
 
-### Data fetching process 
+### Data fetching process (Very Long Process, run only the final data set df_africa) ---- 
 
 # The final dataset can be loaded here 
-df_africa <- read_csv('df_africa.csv')
+df_africa <- read_csv('Data/df_africa.csv')
 
-# 1 : OpenAlex ID fetching 
+# 1 : OpenAlex ID fetching ---- 
 
 options(
   openalex.mailto = "Marcel.Nguyen@ens.psl.eu"
@@ -147,7 +147,7 @@ df_africa <- df_africa %>%
   )
 
 
-# 2 : Publications/Citations/International Outlook data fetch 
+# 2 : Publications/Citations/International Outlook data fetch ----
 
 # The dataset containing publications can be loaded here 
 publications <- read_csv('pubs_africa.csv')
@@ -244,7 +244,7 @@ for (i in seq_len(nrow(to_fetch))) {
 df_africa <- df_africa %>%
   left_join(citations, by = c('year', 'inst_id'))
 
-# iii) International Outlook 
+# iii) International Outlook ----
 
 plan(multisession, workers = 2)
 
@@ -423,7 +423,7 @@ for (k in seq_along(chunks)) {
 df_africa <- df_africa |>
   left_join(results, by = c("inst_id", "year"))
 
-# 3 : Macroeconomic controls 
+# 3 : Macroeconomic controls ----
 
 gdp_cap <- WDI(
   country = "all",
@@ -615,7 +615,7 @@ df_africa <- df_africa %>%
     by = c("country_code", "year")
   )
 
-# 4 : Founding Date 
+# 4 : Founding Date ----
 
 uni <- read_csv("uni.csv")
 

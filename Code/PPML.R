@@ -19,6 +19,8 @@ df_model_ppml <- df_africa %>%
     country_year = interaction(country_code, year, drop = TRUE)
   )
 
+# Citations PPML ---- 
+
 c1 <- fepois(
   n_citations ~ ace_1 + ace_2 |
     inst_id + year,
@@ -94,6 +96,8 @@ etable(
   tex = TRUE,
   file = "Output/ppml_cit.tex"
 )
+
+# Publications PPML ----
 
 m1 <- fepois(
   n_publication ~
