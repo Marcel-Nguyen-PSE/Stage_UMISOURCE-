@@ -1,3 +1,50 @@
+packages <- c(
+  "progressr",
+  "tidyverse",
+  "readxl",
+  "rio",
+  "xtable",
+  "here",
+  "gtsummary",
+  "glue",
+  "scales",
+  "patchwork",
+  "stargazer",
+  "sandwich",
+  "lmtest",
+  "AER",
+  "car",
+  "haven",
+  "fixest",
+  "sf",
+  "did",
+  "rdrobust",
+  "TwoWayFEWeights",
+  "Synth",
+  "fredr",
+  "plm",
+  "openalexR",
+  "purrr",
+  "np",
+  "furrr",
+  "countrycode",
+  "WDI",
+  "typstable",
+  "mgcv",
+  "FactoMineR",
+  "factoextra",
+  "rnaturalearth",
+  "rnaturalearthdata",
+  "MatchIt",
+  "cobalt"
+)
+
+new_packages <- setdiff(packages, rownames(installed.packages()))
+
+if (length(new_packages) > 0) {
+  install.packages(new_packages)
+}
+
 library(progressr)
 library(tidyverse)
 library(readxl)
